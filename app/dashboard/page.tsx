@@ -15,7 +15,7 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Loader2, Files, LogOut } from "lucide-react"
-import { IconGoogle } from "../components/icons"
+import { IconGoogle } from "@/app/components/icons" // Corrected import path
 
 // Define a type for our user's Firestore data
 type UserData = {
@@ -88,7 +88,7 @@ export default function DashboardPage() {
     }
   }
 
-  // This is the new function to connect to Google Drive & Sheets
+  // This is the updated function to connect to Google Drive & Sheets
   const handleGoogleConnect = async () => {
     if (!user) {
       toast.error("You must be logged in to connect.")
@@ -97,63 +97,75 @@ export default function DashboardPage() {
 
     setIsConnecting(true)
     const provider = new GoogleAuthProvider()
-    // These scopes are the magic! We are asking for permission.
     provider.addScope("https://www.googleapis.com/auth/drive.file")
     provider.addScope("https://www.googleapis.com/auth/spreadsheets")
 
     const authInstance = getAuth()
 
     try {
-      // We use signInWithPopup. Since the user is already signed in,
-      // Firebase is smart and will just ask for the new permissions.
       const result = await signInWithPopup(authInstance, provider)
-
-      // Get the all-important OAuth access token
       const credential = GoogleAuthProvider.credentialFromResult(result)
       const accessToken = credential?.accessToken
 
-      if (accessToken) {
-        toast.success("Permissions granted! Setting up your file...")
-        console.log("Acquired Google Access Token:", accessToken)
-
-        // ---
-        // In the NEXT step, we will use this `accessToken` to:
-        // 1. Create a new Google Sheet file.
-        // 2. Create a new Google Drive folder.
-        // 3. Move the file into the folder.
-        // 4. Save the new sheetId and folderId to Firestore.
-        // ---
-
-        // For now, let's just mark the user as connected in Firestore
-        // This will make this "Connect" component disappear.
-        const userRef = doc(db, "users", user.uid)
-        await setDoc(
-          userRef,
-          {
-            googleIntegration: {
-              connected: true,
-              // We will add sheetId and folderId here in the next step
-            },
-          },
-          { merge: true } // merge: true ensures we don't overwrite other user data
-        )
-
-        toast.success("Successfully connected to Google!")
-      } else {
+      if (!accessToken) {
         toast.error("Could not get access token from Google.")
+        setIsConnecting(false)
+        return
       }
+
+      toast.success("Permissions granted! Setting up your files...")
+
+      // *** THIS IS THE NEW PART ***
+      // Send the token to our server-side API route
+      const response = await fetch("/api/setup-google", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ accessToken }),
+      })
+
+      if (!response.ok) {
+        const { error } = await response.json()
+        throw new Error(error || "Failed to set up Google files.")
+      }
+
+      // Get back the new folder and sheet IDs
+      const { folderId, sheetId } = await response.json()
+
+      if (!folderId || !sheetId) {
+        throw new Error("Invalid response from setup API.")
+      }
+
+      // Now, save this information to Firestore
+      const userRef = doc(db, "users", user.uid)
+      await setDoc(
+        userRef,
+        {
+          googleIntegration: {
+            connected: true,
+            folderId: folderId,
+            sheetId: sheetId,
+          },
+        },
+        { merge: true }
+      )
+
+      toast.success("Successfully created your Google Sheet and Folder!")
+      // The onSnapshot listener will automatically update the UI!
     } catch (error: any) {
       console.error("Error connecting Google account:", error)
       if (error.code === "auth/popup-closed-by-user") {
         toast.info("Connection process cancelled.")
       } else {
-        toast.error("Failed to connect to Google. Please try again.")
+        toast.error(error.message || "Failed to connect to Google.")
       }
     } finally {
       setIsConnecting(false)
     }
   }
 
+  // ... (rest of the component is the same as before) ...
   // Show a loading state while auth or data is being checked
   if (authLoading || isDataLoading) {
     return (
@@ -203,11 +215,6 @@ export default function DashboardPage() {
 
       {/* Main Content Area */}
       <main className="container flex-1 py-8">
-        {/*
-          This is the new conditional logic.
-          We check if the user data is loaded AND if the
-          googleIntegration.connected flag is true.
-        */}
         {userData && userData.googleIntegration?.connected ? (
           // 1. User IS connected. Show the main app (for now, a welcome).
           <div>
@@ -220,6 +227,12 @@ export default function DashboardPage() {
             <p className="mt-4">Your email: {userData.email}</p>
             <p className="mt-4 text-green-600">
               You are connected to Google Drive & Sheets!
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Sheet ID: {userData.googleIntegration?.sheetId}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Folder ID: {userData.googleIntegration?.folderId}
             </p>
           </div>
         ) : (
@@ -234,9 +247,9 @@ export default function DashboardPage() {
               Google Drive and Google Sheets.
             </p>
             <p className="mt-4 text-sm text-muted-foreground">
-              We will create a single new folder (<b>&quot;Finance Tracker&quot;</b>) and one
-              Google Sheet in your personal drive.{" "}
-              <b>You retain 100% ownership of your data.</b>
+              We will create a single new folder (
+              <b>&quot;SaaS Finance Tracker&quot;</b>) and one Google Sheet in your
+              personal drive. <b>You retain 100% ownership of your data.</b>
             </p>
             <Button
               size="lg"
