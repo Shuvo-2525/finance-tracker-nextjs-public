@@ -1,4 +1,5 @@
 import { toast } from "sonner"
+import { format } from "date-fns"
 
 // This is the URL for the Google Sheets API
 const SHEETS_API_URL = "https://sheets.googleapis.com/v4/spreadsheets"
@@ -14,6 +15,16 @@ export type Category = {
   id: string
   name: string
   type: "Income" | "Expense"
+}
+
+// 2. DEFINE THE TRANSACTION TYPE
+export type Transaction = {
+  date: string
+  company: string
+  category: string
+  description: string
+  income: number
+  expense: number
 }
 
 /**
@@ -196,6 +207,120 @@ export async function addCategory(
   } catch (error) {
     console.error("Error in addCategory:", error)
     toast.error("Could not add your category.")
+    return false
+  }
+}
+
+// 3. ADD GETTRANSACTIONS FUNCTION
+/**
+ * Fetches the 100 most recent transactions from the 'Transactions' tab.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @returns A promise that resolves to an array of Transaction objects.
+ */
+export async function getTransactions(
+  sheetId: string,
+  accessToken: string
+): Promise<Transaction[]> {
+  try {
+    // Fetches rows from the bottom up (most recent)
+    const range = "Transactions!A2:F"
+    const url = `${SHEETS_API_URL}/${sheetId}/values/${range}?majorDimension=ROWS`
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error fetching transactions:", errorData)
+      throw new Error("Failed to fetch transactions from Google Sheet.")
+    }
+
+    const data = await response.json()
+    const values = data.values || []
+
+    // Map rows to objects and reverse to get most recent first
+    const transactions: Transaction[] = values.map((row: any[]) => ({
+      date: row[0] || "",
+      company: row[1] || "",
+      category: row[2] || "",
+      description: row[3] || "",
+      income: parseFloat(row[4]) || 0,
+      expense: parseFloat(row[5]) || 0,
+    }))
+
+    return transactions.reverse().slice(0, 100) // Return 100 most recent
+  } catch (error) {
+    console.error("Error in getTransactions:", error)
+    toast.error("Could not load your transactions.")
+    return []
+  }
+}
+
+// 4. ADD ADDTRANSACTION FUNCTION
+/**
+ * Adds a new transaction to the 'Transactions' tab.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @param transaction The transaction data to add.
+ * @returns A promise that resolves to true on success, false on failure.
+ */
+export async function addTransaction(
+  sheetId: string,
+  accessToken: string,
+  transaction: {
+    date: Date
+    company: string
+    category: string
+    description: string
+    amount: number
+    type: "Income" | "Expense"
+  }
+): Promise<boolean> {
+  try {
+    const range = "Transactions!A:F" // Append to the first empty row
+    const url = `${SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED`
+
+    // Format date to "MM/dd/yyyy"
+    const formattedDate = format(transaction.date, "MM/dd/yyyy")
+    
+    // Prepare row data based on transaction type
+    const newRow = [
+      formattedDate,
+      transaction.company,
+      transaction.category,
+      transaction.description,
+      transaction.type === "Income" ? transaction.amount : "",
+      transaction.type === "Expense" ? transaction.amount : "",
+    ]
+
+    const body = {
+      values: [newRow],
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error adding transaction:", errorData)
+      throw new Error("Failed to add transaction to Google Sheet.")
+    }
+
+    toast.success(`Transaction added successfully!`)
+    return true
+  } catch (error) {
+    console.error("Error in addTransaction:", error)
+    toast.error("Could not add your transaction.")
     return false
   }
 }
