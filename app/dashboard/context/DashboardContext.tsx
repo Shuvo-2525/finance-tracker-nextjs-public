@@ -7,6 +7,8 @@ import {
   useState,
   ReactNode,
   useCallback,
+  // 1. Import useRef
+  useRef,
 } from "react"
 import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth"
 import { toast } from "sonner"
@@ -46,11 +48,20 @@ export function DashboardProvider({
   const { userData } = value
   const sheetId = userData?.googleIntegration?.sheetId || null
 
+  // 2. Add a ref to act as a "lock"
+  const isTokenRequestInProgress = useRef(false)
+
   /**
    * Re-authenticates with Google to get a fresh, short-lived access token.
    * This is necessary for making authenticated API calls to Google Sheets.
    */
   const getGoogleAccessToken = useCallback(async (): Promise<string | null> => {
+    // 3. Check if a request is already in progress
+    if (isTokenRequestInProgress.current) {
+      toast.info("Please complete the Google authentication popup first.")
+      return null
+    }
+
     const auth = getAuth()
     if (!auth.currentUser) {
       toast.error("Not authenticated. Please re-login.")
@@ -58,6 +69,9 @@ export function DashboardProvider({
     }
 
     try {
+      // 4. Set the lock
+      isTokenRequestInProgress.current = true
+
       const provider = new GoogleAuthProvider()
       provider.addScope("https://www.googleapis.com/auth/drive.file")
       provider.addScope("https://www.googleapis.com/auth/spreadsheets")
@@ -75,8 +89,18 @@ export function DashboardProvider({
       }
     } catch (error: any) {
       console.error("Error getting fresh Google token:", error)
-      toast.error("Failed to authenticate with Google. Please try again.")
+      // 5. Handle the specific errors you're seeing
+      if (error.code === "auth/popup-blocked") {
+        toast.error("Popup blocked. Please allow popups for this site.")
+      } else if (error.code === "auth/cancelled-popup-request") {
+        toast.info("Authentication request cancelled.")
+      } else {
+        toast.error("Failed to authenticate with Google. Please try again.")
+      }
       return null
+    } finally {
+      // 6. Always release the lock
+      isTokenRequestInProgress.current = false
     }
   }, [])
 
