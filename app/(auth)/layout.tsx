@@ -8,7 +8,10 @@ export default function AuthLayout({
   return (
     <>
       <AuthHeader />
-      <main>{children}</main>
+      {/* This main tag now centers the card and adds padding for the header */}
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 pt-20">
+        {children}
+      </main>
     </>
   )
 }
