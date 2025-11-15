@@ -3,8 +3,9 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/app/components/theme-provider"
 import { cn } from "@/lib/utils"
-// 1. Import the AuthProvider
 import { AuthProvider } from "@/app/context/AuthContext"
+// 1. Import the Toaster
+import { Toaster } from "@/components/ui/sonner"
 
 const fontSans = Inter({
   subsets: ["latin"],
@@ -35,8 +36,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {/* 2. Wrap your {children} with the AuthProvider */}
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {children}
+            {/* 2. Add the Toaster component here */}
+            <Toaster richColors />
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
