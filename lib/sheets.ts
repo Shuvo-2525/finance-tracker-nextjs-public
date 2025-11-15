@@ -68,7 +68,8 @@ export async function addCompany(
     const url = `${SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED`
 
     // Generate a simple unique ID (in a real app, you might use a library like nanoid)
-    const companyId = companyName.toLowerCase().replace(/\s+/g, "-") + `-${Date.now()}`
+    const companyId =
+      companyName.toLowerCase().replace(/\s+/g, "-") + `-${Date.now()}`
 
     const body = {
       values: [[companyId, companyName]],

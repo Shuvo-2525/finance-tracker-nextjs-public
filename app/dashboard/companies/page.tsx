@@ -12,31 +12,33 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { PlusCircle, Loader2 } from "lucide-react"
+// 1. Import RefreshCw icon
+import { PlusCircle, Loader2, RefreshCw } from "lucide-react"
 
-// 1. Import the dashboard context and sheet functions
+// 2. Import the dashboard context and sheet functions
 import { useDashboard } from "@/app/dashboard/context/DashboardContext"
 import { getCompanies, addCompany, type Company } from "@/lib/sheets"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 export default function CompaniesPage() {
-  // 2. Get data and functions from our dashboard context
+  // 3. Get data and functions from our dashboard context
   const { sheetId, getGoogleAccessToken } = useDashboard()
 
-  // 3. Set up state for the page
+  // 4. Set up state for the page
   const [companies, setCompanies] = React.useState<Company[]>([])
   const [newCompanyName, setNewCompanyName] = React.useState("")
-  const [isFetching, setIsFetching] = React.useState(true)
+  const [isFetching, setIsFetching] = React.useState(false) // Set initial fetching to false
   const [isAdding, setIsAdding] = React.useState(false)
 
-  // 4. Function to fetch companies from the sheet
+  // 5. Function to fetch companies from the sheet
   const fetchCompanies = React.useCallback(async () => {
     if (!sheetId) return
 
     setIsFetching(true)
     const accessToken = await getGoogleAccessToken()
     if (!accessToken) {
-      toast.error("Authentication failed. Please try again.")
+      // The getGoogleAccessToken function now handles its own toasts
       setIsFetching(false)
       return
     }
@@ -46,12 +48,13 @@ export default function CompaniesPage() {
     setIsFetching(false)
   }, [sheetId, getGoogleAccessToken])
 
-  // 5. Fetch companies when the page first loads
+  // 6. We remove the automatic fetch from useEffect
   React.useEffect(() => {
-    fetchCompanies()
-  }, [fetchCompanies])
+    // We no longer fetch on load
+    // fetchCompanies()
+  }, []) // Empty array, this runs once
 
-  // 6. Function to handle adding a new company
+  // 7. Function to handle adding a new company
   const handleAddCompany = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!sheetId || !newCompanyName.trim()) {
@@ -62,7 +65,7 @@ export default function CompaniesPage() {
     setIsAdding(true)
     const accessToken = await getGoogleAccessToken()
     if (!accessToken) {
-      toast.error("Authentication failed. Please try again.")
+      // getGoogleAccessToken handles its own toasts
       setIsAdding(false)
       return
     }
@@ -73,8 +76,15 @@ export default function CompaniesPage() {
       setNewCompanyName("") // Clear the input
       await fetchCompanies() // Refresh the list
     }
-    
+
     setIsAdding(false)
+  }
+
+  // 8. NEW function to handle manual refresh click
+  const handleRefreshClick = () => {
+    // This function is triggered by a user click,
+    // so the popup will not be blocked.
+    fetchCompanies()
   }
 
   return (
@@ -88,7 +98,7 @@ export default function CompaniesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* 7. Update the form */}
+          {/* 9. Update the form (no changes, just for context) */}
           <form onSubmit={handleAddCompany} className="space-y-4">
             <div>
               <Label htmlFor="companyName">Company Name</Label>
@@ -116,13 +126,33 @@ export default function CompaniesPage() {
         </CardContent>
       </Card>
 
-      {/* 8. Update the Company List Card */}
+      {/* 10. Update the Company List Card */}
       <Card className="md:col-span-1 lg:col-span-2">
         <CardHeader>
-          <CardTitle>Your Companies</CardTitle>
-          <CardDescription>
-            You are currently tracking {companies.length} entities.
-          </CardDescription>
+          {/* 11. Add a flex container for title and refresh button */}
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Your Companies</CardTitle>
+              <CardDescription>
+                You are currently tracking {companies.length} entities.
+              </CardDescription>
+            </div>
+            {/* 12. Add the refresh button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshClick}
+              disabled={isFetching}
+            >
+              <RefreshCw
+                className={cn(
+                  "mr-2 h-4 w-4",
+                  isFetching && "animate-spin"
+                )}
+              />
+              Refresh
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isFetching ? (
@@ -132,6 +162,7 @@ export default function CompaniesPage() {
             </div>
           ) : (
             <div className="space-y-2">
+              {/* 13. Update the logic to show a "click refresh" message */}
               {companies.length > 0 ? (
                 companies.map((company) => (
                   <div
@@ -147,8 +178,8 @@ export default function CompaniesPage() {
                   </div>
                 ))
               ) : (
-                <p className="text-center text-muted-foreground">
-                  You haven&apos;t added any companies yet, other than "Personal".
+                <p className="py-8 text-center text-muted-foreground">
+                  Click the "Refresh" button to load your companies.
                 </p>
               )}
             </div>
