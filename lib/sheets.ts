@@ -9,6 +9,13 @@ export type Company = {
   name: string
 }
 
+// 1. DEFINE THE CATEGORY TYPE
+export type Category = {
+  id: string
+  name: string
+  type: "Income" | "Expense"
+}
+
 /**
  * Fetches all companies from the 'Companies' tab in the Google Sheet.
  * @param sheetId The ID of the Google Sheet.
@@ -95,6 +102,100 @@ export async function addCompany(
   } catch (error) {
     console.error("Error in addCompany:", error)
     toast.error("Could not add your company.")
+    return false
+  }
+}
+
+// 2. ADD GETCATEGORIES FUNCTION
+/**
+ * Fetches all categories from the 'Categories' tab in the Google Sheet.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @returns A promise that resolves to an array of Category objects.
+ */
+export async function getCategories(
+  sheetId: string,
+  accessToken: string
+): Promise<Category[]> {
+  try {
+    const range = "Categories!A2:C" // Start from row 2 (A2) to skip the header
+    const url = `${SHEETS_API_URL}/${sheetId}/values/${range}`
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error fetching categories:", errorData)
+      throw new Error("Failed to fetch categories from Google Sheet.")
+    }
+
+    const data = await response.json()
+    const values = data.values || []
+
+    // Map the 2D array [["id", "name", "type"], ...]
+    // into an array of objects [{id: "id1", name: "name1", type: "Expense"}, ...]
+    return values.map((row: string[]) => ({
+      id: row[0],
+      name: row[1],
+      type: row[2] === "Income" ? "Income" : "Expense", // Ensure type is valid
+    }))
+  } catch (error) {
+    console.error("Error in getCategories:", error)
+    toast.error("Could not load your categories.")
+    return [] // Return an empty array on failure
+  }
+}
+
+// 3. ADD ADDCATEGORY FUNCTION
+/**
+ * Adds a new category to the 'Categories' tab.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @param categoryName The name of the new category.
+ * @param categoryType The type of the new category ("Income" or "Expense").
+ * @returns A promise that resolves to true on success, false on failure.
+ */
+export async function addCategory(
+  sheetId: string,
+  accessToken: string,
+  categoryName: string,
+  categoryType: "Income" | "Expense"
+): Promise<boolean> {
+  try {
+    const range = "Categories!A:C" // Append to the first empty row
+    const url = `${SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED`
+
+    const categoryId =
+      categoryName.toLowerCase().replace(/\s+/g, "-") + `-${Date.now()}`
+
+    const body = {
+      values: [[categoryId, categoryName, categoryType]],
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error adding category:", errorData)
+      throw new Error("Failed to add category to Google Sheet.")
+    }
+
+    toast.success(`Category "${categoryName}" added successfully!`)
+    return true
+  } catch (error) {
+    console.error("Error in addCategory:", error)
+    toast.error("Could not add your category.")
     return false
   }
 }
