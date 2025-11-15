@@ -3,6 +3,8 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/app/components/theme-provider"
 import { cn } from "@/lib/utils"
+// 1. Import the AuthProvider
+import { AuthProvider } from "@/app/context/AuthContext"
 
 const fontSans = Inter({
   subsets: ["latin"],
@@ -20,8 +22,6 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    // The 'suppressHydrationWarning' is needed because next-themes
-    // updates the 'class' attribute on the <html> tag.
     <html lang="en" suppressHydrationWarning>
       <body
         className={cn(
@@ -29,16 +29,14 @@ export default function RootLayout({
           fontSans.variable
         )}
       >
-        {/* This ThemeProvider allows us to switch between light and dark mode.
-          The 'defaultTheme' is "system", which respects the user's OS preference.
-        */}
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          {/* 2. Wrap your {children} with the AuthProvider */}
+          <AuthProvider>{children}</AuthProvider>
         </ThemeProvider>
       </body>
     </html>
