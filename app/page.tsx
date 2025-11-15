@@ -82,7 +82,7 @@ export default function Home() {
         {/* Features Section */}
         <section
           id="features"
-          className="container space-y-12 bg-gray-50/50 py-12 dark:bg-gray-900/50 md:py-20 lg:py-24"
+          className="container space-y-12 py-12 md:py-20 lg:py-24"
         >
           <div className="mx-auto flex max-w-3xl flex-col items-center space-y-4 text-center">
             <h2 className="text-3xl font-bold leading-[1.1] tracking-tighter sm:text-4xl md:text-5xl">
@@ -97,7 +97,7 @@ export default function Home() {
             {features.map((feature) => (
               <div
                 key={feature.title}
-                className="relative overflow-hidden rounded-xl border bg-background p-6 shadow-md"
+                className="relative overflow-hidden rounded-xl border bg-background p-6 shadow"
               >
                 <div className="flex flex-col justify-between rounded-md">
                   <div className="mb-4">{feature.icon}</div>
@@ -130,7 +130,7 @@ export default function Home() {
             {howItWorks.map((step) => (
               <div
                 key={step.title}
-                className="flex flex-col space-y-4 rounded-xl border bg-background p-6 shadow-md"
+                className="flex flex-col space-y-4 rounded-xl border bg-background p-6 shadow"
               >
                 <span className="text-5xl font-bold text-primary">
                   {step.step}
@@ -149,7 +149,7 @@ export default function Home() {
           id="cta"
           className="container py-12 md:py-20 lg:py-24"
         >
-          <div className="mx-auto flex max-w-3xl flex-col items-center space-y-6 rounded-2xl border bg-background p-10 text-center shadow-xl md:p-16">
+          <div className="mx-auto flex max-w-3xl flex-col items-center space-y-6 rounded-xl border bg-background p-10 text-center shadow-lg md:p-16">
             <h2 className="text-3xl font-bold leading-[1.1] tracking-tighter sm:text-4xl md:text-5xl">
               Take Control of Your Finances
             </h2>

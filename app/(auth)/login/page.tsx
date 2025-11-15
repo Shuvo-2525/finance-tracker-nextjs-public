@@ -120,6 +120,7 @@ export default function LoginPage() {
 
   // Don't render the form if auth state is still loading
   if (loading) {
+    // You can replace this with a nice spinner component
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p>Loading...</p>
@@ -133,66 +134,77 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
-          <CardDescription>
-            Sign in to your account to continue.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleEmailLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@example.com"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Signing In..." : "Sign In"}
-            </Button>
-          </form>
-
-          <Separator className="my-6" />
-
+    // We removed the outer div. The card is now the top-level element.
+    <Card className="w-full max-w-lg p-6 shadow-xl">
+      <CardHeader className="text-center">
+        <CardTitle className="text-3xl font-bold">Welcome Back</CardTitle>
+        <CardDescription className="text-base">
+          Sign in to your account to continue.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <form onSubmit={handleEmailLogin} className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-base">
+              Email
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="name@example.com"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={isLoading}
+              className="h-10 text-base" // Larger input
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password" className="text-base">
+              Password
+            </Label>
+            <Input
+              id="password"
+              type="password"
+              placeholder="••••••••"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoading}
+              className="h-10 text-base" // Larger input
+            />
+          </div>
           <Button
-            variant="outline"
+            type="submit"
             className="w-full"
-            onClick={handleGoogleSignIn}
+            size="lg" // Larger button
             disabled={isLoading}
           >
-            <IconGoogle className="mr-2 h-4 w-4" />
-            Sign in with Google
+            {isLoading ? "Signing In..." : "Sign In"}
           </Button>
-        </CardContent>
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
-            <Button variant="link" asChild className="p-0">
-              <Link href="/signup">Sign Up</Link>
-            </Button>
-          </p>
-        </CardFooter>
-      </Card>
-    </div>
+        </form>
+
+        <Separator className="my-6" />
+
+        <Button
+          variant="outline"
+          className="w-full"
+          size="lg" // Larger button
+          onClick={handleGoogleSignIn}
+          disabled={isLoading}
+        >
+          <IconGoogle className="mr-2 h-5 w-5" />
+          Sign in with Google
+        </Button>
+      </CardContent>
+      <CardFooter className="justify-center pt-6">
+        <p className="text-base text-muted-foreground">
+          Don&apos;t have an account?{" "}
+          <Button variant="link" asChild className="p-0 text-base">
+            <Link href="/signup">Sign Up</Link>
+          </Button>
+        </p>
+      </CardFooter>
+    </Card>
   )
 }

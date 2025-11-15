@@ -26,7 +26,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { IconGoogle } from "@/app/components/icons" // Import our new icon
+import { IconGoogle } from "@/app/components/icons"
 
 export default function SignUpPage() {
   const [email, setEmail] = React.useState("")
@@ -57,7 +57,6 @@ export default function SignUpPage() {
         email: email,
         displayName: displayName,
         createdAt: new Date(),
-        // Add any other default fields for a new user
         subscriptionStatus: "free",
         entities: [],
       })
@@ -92,16 +91,14 @@ export default function SignUpPage() {
       )
       const user = userCredential.user
 
-      // Update Firebase auth profile with display name
       await updateProfile(user, {
         displayName: displayName,
       })
 
-      // Create user document in Firestore
       await createUserDocument(user.uid, user.email!, displayName)
 
       toast.success("Account created successfully! Redirecting...")
-      router.push("/dashboard") // Redirect to dashboard on success
+      router.push("/dashboard")
     } catch (error: any) {
       console.error(error)
       if (error.code === "auth/email-already-in-use") {
@@ -122,13 +119,10 @@ export default function SignUpPage() {
       const result = await signInWithPopup(auth, provider)
       const user = result.user
 
-      // Check if user document already exists (this handles both sign in and sign up)
-      // For a new user signing up with Google, we'll create their doc
       const userRef = doc(db, "users", user.uid)
       const docSnap = await getDoc(userRef)
 
       if (!docSnap.exists()) {
-        // This is a new user
         await createUserDocument(
           user.uid,
           user.email!,
@@ -137,7 +131,7 @@ export default function SignUpPage() {
       }
 
       toast.success("Signed in successfully! Redirecting...")
-      router.push("/dashboard") // Redirect to dashboard
+      router.push("/dashboard")
     } catch (error: any) {
       console.error(error)
       toast.error("An error occurred with Google Sign-In. Please try again.")
@@ -146,7 +140,6 @@ export default function SignUpPage() {
     }
   }
 
-  // Don't render the form if auth state is still loading
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -155,96 +148,112 @@ export default function SignUpPage() {
     )
   }
 
-  // Don't render if user is already logged in (will be redirected)
   if (user) {
     return null
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Create an Account</CardTitle>
-          <CardDescription>
-            Enter your details below to get started.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleEmailSignUp} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="displayName">Name</Label>
-              <Input
-                id="displayName"
-                type="text"
-                placeholder="John Doe"
-                required
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@example.com"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="••••••••"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Creating Account..." : "Create Account"}
-            </Button>
-          </form>
-
-          <Separator className="my-6" />
-
+    // We removed the outer div. The card is now the top-level element.
+    <Card className="w-full max-w-lg p-6 shadow-xl">
+      <CardHeader className="text-center">
+        <CardTitle className="text-3xl font-bold">Create an Account</CardTitle>
+        <CardDescription className="text-base">
+          Enter your details below to get started.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <form onSubmit={handleEmailSignUp} className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="displayName" className="text-base">
+              Name
+            </Label>
+            <Input
+              id="displayName"
+              type="text"
+              placeholder="John Doe"
+              required
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              disabled={isLoading}
+              className="h-10 text-base" // Larger input
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-base">
+              Email
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="name@example.com"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={isLoading}
+              className="h-10 text-base" // Larger input
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password" className="text-base">
+              Password
+            </Label>
+            <Input
+              id="password"
+              type="password"
+              placeholder="•••••••• (6+ characters)"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoading}
+              className="h-10 text-base" // Larger input
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword" className="text-base">
+              Confirm Password
+            </Label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              placeholder="••••••••"
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={isLoading}
+              className="h-10 text-base" // Larger input
+            />
+          </div>
           <Button
-            variant="outline"
+            type="submit"
             className="w-full"
-            onClick={handleGoogleSignIn}
+            size="lg" // Larger button
             disabled={isLoading}
           >
-            <IconGoogle className="mr-2 h-4 w-4" />
-            Sign up with Google
+            {isLoading ? "Creating Account..." : "Create Account"}
           </Button>
-        </CardContent>
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
-            Already have an account?{" "}
-            <Button variant="link" asChild className="p-0">
-              <Link href="/login">Sign In</Link>
-            </Button>
-          </p>
-        </CardFooter>
-      </Card>
-    </div>
+        </form>
+
+        <Separator className="my-6" />
+
+        <Button
+          variant="outline"
+          className="w-full"
+          size="lg" // Larger button
+          onClick={handleGoogleSignIn}
+          disabled={isLoading}
+        >
+          <IconGoogle className="mr-2 h-5 w-5" />
+          Sign up with Google
+        </Button>
+      </CardContent>
+      <CardFooter className="justify-center pt-6">
+        <p className="text-base text-muted-foreground">
+          Already have an account?{" "}
+          <Button variant="link" asChild className="p-0 text-base">
+            <Link href="/login">Sign In</Link>
+          </Button>
+        </p>
+      </CardFooter>
+    </Card>
   )
 }
