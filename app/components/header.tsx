@@ -10,7 +10,7 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { ModeToggle } from "./mode-toggle"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { Menu } from "lucide-react"
 
 export function Header() {
@@ -108,6 +108,7 @@ export function Header() {
 
         {/* Mobile Menu */}
         <div className="flex flex-1 items-center justify-end md:hidden">
+          <ModeToggle />
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="outline" size="icon" className="ml-2">
@@ -116,6 +117,11 @@ export function Header() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right">
+              {/* This SheetTitle is the fix. 
+                We add "sr-only" to hide it visually but make it 
+                available for screen readers, resolving the error.
+              */}
+              <SheetTitle className="sr-only">Menu</SheetTitle>
               <nav className="grid gap-6 text-lg font-medium">
                 <Link
                   href="/"
