@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/app/context/AuthContext"
 import { auth, db } from "@/lib/firebase"
@@ -13,10 +12,12 @@ import {
 import { doc, onSnapshot, setDoc } from "firebase/firestore"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Loader2, Files, LogOut } from "lucide-react"
+import { Loader2, Files } from "lucide-react"
 import { IconGoogle } from "@/app/components/icons"
 import { DashboardHeader } from "./components/DashboardHeader"
 import { DashboardNav } from "./components/DashboardNav"
+// 1. Import the DashboardProvider
+import { DashboardProvider } from "./context/DashboardContext"
 
 // Define a type for our user's Firestore data
 type UserData = {
@@ -163,15 +164,19 @@ export default function DashboardLayout({
   // If the user is connected, show the dashboard.
   if (userData && userData.googleIntegration?.connected) {
     return (
-      <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">
-        <DashboardNav />
-        <div className="flex flex-col">
-          <DashboardHeader />
-          <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
-            {children}
-          </main>
+      // 2. Wrap the dashboard layout with the Provider
+      // We pass in the userData we just fetched.
+      <DashboardProvider value={{ userData }}>
+        <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">
+          <DashboardNav />
+          <div className="flex flex-col">
+            <DashboardHeader />
+            <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
+      </DashboardProvider>
     )
   }
 
