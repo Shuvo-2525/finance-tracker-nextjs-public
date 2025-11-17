@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-// --- 1. IMPORT NEW COMPONENTS ---
-import { format, subDays, parse } from "date-fns"
+// --- 1. IMPORT NEW COMPONENTS & HELPERS ---
+import { format, subDays, parse, startOfDay, endOfDay } from "date-fns" // Import startOfDay and endOfDay
 import { Calendar as CalendarIcon, Loader2, RefreshCw } from "lucide-react"
 import { DateRange } from "react-day-picker"
 import { toast } from "sonner"
@@ -31,8 +31,8 @@ import {
 import { Calendar } from "@/components/ui/calendar"
 // --- END IMPORTS ---
 
-// --- ERROR FIX: Use relative paths ---
-import { useDashboard } from "./context/DashboardContext"
+// --- FIX: Use tsconfig.json aliases ---
+import { useDashboard } from "@/app/dashboard/context/DashboardContext"
 import {
   getCompanies,
   getCategories,
@@ -40,8 +40,8 @@ import {
   type Company,
   type Category,
   type Transaction,
-} from "../../lib/sheets"
-// --- END ERROR FIX ---
+} from "@/lib/sheets"
+// --- END FIX ---
 
 // Helper to format currency
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -60,11 +60,11 @@ export default function DashboardPage() {
   // State for loading
   const [isLoadingData, setIsLoadingData] = React.useState(true) // Load on mount
 
-  // --- 2. NEW STATE FOR FILTERS ---
+  // --- 2. NEW STATE FOR FILTERS (WITH FIX) ---
   const [selectedCompany, setSelectedCompany] = React.useState<string>("all")
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
-    from: subDays(new Date(), 29), // Default to last 30 days
-    to: new Date(),
+    from: startOfDay(subDays(new Date(), 29)), // Use startOfDay for the 'from' date
+    to: endOfDay(new Date()), // Use endOfDay for the 'to' date
   })
   // --- END NEW STATE ---
 
@@ -100,7 +100,7 @@ export default function DashboardPage() {
   }, [fetchAllData])
   // --- END AUTO-FETCH ---
 
-  // --- 4. UPDATE MEMOS TO USE FILTERS ---
+  // --- 4. UPDATE MEMOS TO USE FILTERS (WITH FIX) ---
   const filteredTransactions = React.useMemo(() => {
     return allTransactions.filter((t) => {
       // Filter by company
@@ -110,12 +110,20 @@ export default function DashboardPage() {
       // Filter by date
       let dateMatch = true
       const transactionDate = parse(t.date, "MM/dd/yyyy", new Date())
-      if (dateRange?.from && dateRange?.to) {
-        dateMatch =
-          transactionDate >= dateRange.from && transactionDate <= dateRange.to
-      } else if (dateRange?.from) {
-        dateMatch = transactionDate >= dateRange.from
+
+      // --- LOGIC FIX IS HERE ---
+      if (dateRange?.from) {
+        // If we have a 'from' date
+        const startDate = startOfDay(dateRange.from)
+        // If we also have a 'to' date, use it. Otherwise, use the 'from' date as the end date.
+        const endDate = endOfDay(dateRange.to || dateRange.from)
+        
+        dateMatch = transactionDate >= startDate && transactionDate <= endDate
+      } else {
+        // No date range selected, so all dates match
+        dateMatch = true
       }
+      // --- END LOGIC FIX ---
 
       return companyMatch && dateMatch
     })
@@ -200,7 +208,7 @@ export default function DashboardPage() {
                 mode="range"
                 defaultMonth={dateRange?.from}
                 selected={dateRange}
-                onSelect={setDateRange}
+                onSelect={setDateRange} // This is correct, it provides the new range
                 numberOfMonths={2}
               />
             </PopoverContent>
@@ -245,7 +253,9 @@ export default function DashboardPage() {
               No transactions found
             </h3>
             <p className="text-sm text-muted-foreground">
-              Go to the "Transactions" page to add your first one.
+              {/* 7. Updated text for empty state */}
+              Go to the "Transactions" page to add your first one, or try
+              adjusting your filters.
             </p>
           </div>
         </div>
