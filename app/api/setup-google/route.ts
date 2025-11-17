@@ -12,14 +12,17 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
   try {
     // 1. Define the new sheets we want to create
     const requests: sheets_v4.Schema$Request[] = [
-      // Rename the default 'Sheet1' to 'Transactions'
+      // Rename 'Sheet1' to 'Transactions' and set columns
       {
         updateSheetProperties: {
           properties: {
             sheetId: 0, // 'Sheet1' is always sheetId 0
             title: "Transactions",
+            gridProperties: {
+              columnCount: 8, // Date, Company, Category, Desc, Income, Expense, Receipt, Invoice ID
+            },
           },
-          fields: "title",
+          fields: "title,gridProperties.columnCount",
         },
       },
       // Add a new sheet for 'Companies'
@@ -29,7 +32,7 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
             title: "Companies",
             gridProperties: {
               rowCount: 100,
-              columnCount: 2,
+              columnCount: 4, // Company ID, Name, Invoice Prefix, Logo URL
             },
           },
         },
@@ -41,12 +44,12 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
             title: "Categories",
             gridProperties: {
               rowCount: 100,
-              columnCount: 3, // e.g., Name, Type (Income/Expense)
+              columnCount: 3, // ID, Name, Type
             },
           },
         },
       },
-      // --- NEW: Add a new sheet for 'Bills' ---
+      // Add a new sheet for 'Bills'
       {
         addSheet: {
           properties: {
@@ -58,7 +61,30 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
           },
         },
       },
-      // --- END NEW ---
+      // --- NEW: Add a new sheet for 'Invoices' ---
+      {
+        addSheet: {
+          properties: {
+            title: "Invoices",
+            gridProperties: {
+              rowCount: 100,
+              columnCount: 9, // Invoice ID, Transaction ID, Company ID, Customer Name, Customer Address, Issue Date, Due Date, Total Amount, Status
+            },
+          },
+        },
+      },
+      // --- NEW: Add a sheet for 'InvoiceCounter' ---
+      {
+        addSheet: {
+          properties: {
+            title: "InvoiceCounter",
+            gridProperties: {
+              rowCount: 100,
+              columnCount: 2, // Company ID, Next Invoice Number
+            },
+          },
+        },
+      },
     ]
 
     // Execute the batch update to create/rename sheets
@@ -78,13 +104,18 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
       newSheets.find((s) => s.title === "Companies")?.sheetId || 0
     const categoriesSheetId =
       newSheets.find((s) => s.title === "Categories")?.sheetId || 0
-    const billsSheetId = // <-- NEW
+    const billsSheetId =
       newSheets.find((s) => s.title === "Bills")?.sheetId || 0
+    // --- NEW: Get new sheet IDs ---
+    const invoicesSheetId =
+      newSheets.find((s) => s.title === "Invoices")?.sheetId || 0
+    const invoiceCounterSheetId =
+      newSheets.find((s) => s.title === "InvoiceCounter")?.sheetId || 0
 
     // 3. Define the header values for each sheet
     const headerData: sheets_v4.Schema$ValueRange[] = [
       {
-        range: "Transactions!A1:G1", // <-- MODIFIED (was A1:F1)
+        range: "Transactions!A1:H1", // <-- MODIFIED (was G1)
         values: [
           [
             "Date",
@@ -93,30 +124,52 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
             "Description",
             "Amount (Income)",
             "Amount (Expense)",
-            "Receipt Link", // <-- ADDED
+            "Receipt Link",
+            "Invoice ID", // <-- ADDED
           ],
         ],
       },
       {
-        range: "Companies!A1:B1",
-        values: [["Company ID", "Company Name"]],
+        range: "Companies!A1:D1", // <-- MODIFIED (was B1)
+        values: [
+          ["Company ID", "Company Name", "Invoice Prefix", "Logo URL"], // <-- MODIFIED
+        ],
       },
       {
         range: "Categories!A1:C1",
         values: [["Category ID", "Category Name", "Type"]],
       },
-      // --- NEW: Add headers for 'Bills' sheet ---
       {
         range: "Bills!A1:E1",
         values: [["BillID", "DueDate", "Payee", "Amount", "Status"]],
       },
-      // --- END NEW ---
-      // Add a default "Personal" company
+      // --- NEW: Add headers for 'Invoices' sheet ---
       {
-        range: "Companies!A2:B2",
-        values: [["default", "Personal"]],
+        range: "Invoices!A1:I1",
+        values: [
+          [
+            "Invoice ID",
+            "Transaction ID",
+            "Company ID",
+            "Customer Name",
+            "Customer Address",
+            "Issue Date",
+            "Due Date",
+            "Total Amount",
+            "Status",
+          ],
+        ],
       },
-      // Add some default categories
+      // --- NEW: Add headers for 'InvoiceCounter' sheet ---
+      {
+        range: "InvoiceCounter!A1:B1",
+        values: [["Company ID", "Next Invoice Number"]],
+      },
+      // --- Add default data ---
+      {
+        range: "Companies!A2:D2", // <-- MODIFIED (was B2)
+        values: [["default", "Personal", "INV-", ""]], // <-- MODIFIED
+      },
       {
         range: "Categories!A2:C4",
         values: [
@@ -125,7 +178,6 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
           ["groceries", "Groceries", "Expense"],
         ],
       },
-      // --- NEW: Add a sample bill ---
       {
         range: "Bills!A2:E2",
         values: [
@@ -138,7 +190,11 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
           ],
         ],
       },
-      // --- END NEW ---
+      // --- NEW: Add default counter ---
+      {
+        range: "InvoiceCounter!A2:B2",
+        values: [["default", "1"]], // Start counting from 1 for default company
+      },
     ]
 
     // Write all header data
@@ -159,16 +215,11 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
               sheetId: 0, // Transactions
               startRowIndex: 0,
               endRowIndex: 1,
-              startColumnIndex: 0, // <-- ADDED
-              endColumnIndex: 7, // <-- ADDED (covers A to G)
+              startColumnIndex: 0,
+              endColumnIndex: 8, // <-- MODIFIED (was 7)
             },
             description: "Protect Transactions Headers",
             warningOnly: false,
-            editors: {
-              users: [
-                /* only the app can edit */
-              ],
-            },
           },
         },
       },
@@ -179,6 +230,8 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
               sheetId: companiesSheetId,
               startRowIndex: 0,
               endRowIndex: 1,
+              startColumnIndex: 0, // <-- ADDED
+              endColumnIndex: 4, // <-- ADDED
             },
             description: "Protect Companies Headers",
             warningOnly: false,
@@ -198,7 +251,6 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
           },
         },
       },
-      // --- NEW: Add protection for 'Bills' headers ---
       {
         addProtectedRange: {
           protectedRange: {
@@ -212,7 +264,34 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
           },
         },
       },
-      // --- END NEW ---
+      // --- NEW: Add protection for 'Invoices' headers ---
+      {
+        addProtectedRange: {
+          protectedRange: {
+            range: {
+              sheetId: invoicesSheetId,
+              startRowIndex: 0,
+              endRowIndex: 1,
+            },
+            description: "Protect Invoices Headers",
+            warningOnly: false,
+          },
+        },
+      },
+      // --- NEW: Add protection for 'InvoiceCounter' headers ---
+      {
+        addProtectedRange: {
+          protectedRange: {
+            range: {
+              sheetId: invoiceCounterSheetId,
+              startRowIndex: 0,
+              endRowIndex: 1,
+            },
+            description: "Protect InvoiceCounter Headers",
+            warningOnly: false,
+          },
+        },
+      },
     ]
 
     // Apply the protections
@@ -228,7 +307,6 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
     console.error("Error initializing sheet:", err)
     // We'll just log the error but not fail the whole request,
     // as the sheet/folder were still created.
-    // In a real app, you might want more robust retry logic.
   }
 }
 
@@ -318,7 +396,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // *** THIS IS THE NEW PART ***
     // 6. Initialize the sheet with tabs, headers, and protections
     await initializeSheet(sheets, sheetId)
 
