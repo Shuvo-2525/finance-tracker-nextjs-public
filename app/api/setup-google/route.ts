@@ -46,6 +46,19 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
           },
         },
       },
+      // --- NEW: Add a new sheet for 'Bills' ---
+      {
+        addSheet: {
+          properties: {
+            title: "Bills",
+            gridProperties: {
+              rowCount: 100,
+              columnCount: 5, // BillID, DueDate, Payee, Amount, Status
+            },
+          },
+        },
+      },
+      // --- END NEW ---
     ]
 
     // Execute the batch update to create/rename sheets
@@ -65,6 +78,8 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
       newSheets.find((s) => s.title === "Companies")?.sheetId || 0
     const categoriesSheetId =
       newSheets.find((s) => s.title === "Categories")?.sheetId || 0
+    const billsSheetId = // <-- NEW
+      newSheets.find((s) => s.title === "Bills")?.sheetId || 0
 
     // 3. Define the header values for each sheet
     const headerData: sheets_v4.Schema$ValueRange[] = [
@@ -90,6 +105,12 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
         range: "Categories!A1:C1",
         values: [["Category ID", "Category Name", "Type"]],
       },
+      // --- NEW: Add headers for 'Bills' sheet ---
+      {
+        range: "Bills!A1:E1",
+        values: [["BillID", "DueDate", "Payee", "Amount", "Status"]],
+      },
+      // --- END NEW ---
       // Add a default "Personal" company
       {
         range: "Companies!A2:B2",
@@ -104,6 +125,20 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
           ["groceries", "Groceries", "Expense"],
         ],
       },
+      // --- NEW: Add a sample bill ---
+      {
+        range: "Bills!A2:E2",
+        values: [
+          [
+            "sample-bill-1",
+            new Date().toLocaleDateString("en-US"), // Today's date
+            "Sample Power Co.",
+            "100",
+            "Pending",
+          ],
+        ],
+      },
+      // --- END NEW ---
     ]
 
     // Write all header data
@@ -163,6 +198,21 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
           },
         },
       },
+      // --- NEW: Add protection for 'Bills' headers ---
+      {
+        addProtectedRange: {
+          protectedRange: {
+            range: {
+              sheetId: billsSheetId,
+              startRowIndex: 0,
+              endRowIndex: 1,
+            },
+            description: "Protect Bills Headers",
+            warningOnly: false,
+          },
+        },
+      },
+      // --- END NEW ---
     ]
 
     // Apply the protections

@@ -29,6 +29,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
+
+// --- 2. IMPORT THE NEW CHART COMPONENTS ---
+import { IncomeExpenseChart } from "./components/charts/IncomeExpenseChart"
+import { ExpensePieChart } from "./components/charts/ExpensePieChart"
 // --- END IMPORTS ---
 
 // --- FIX: Use tsconfig.json aliases ---
@@ -60,7 +64,7 @@ export default function DashboardPage() {
   // State for loading
   const [isLoadingData, setIsLoadingData] = React.useState(true) // Load on mount
 
-  // --- 2. NEW STATE FOR FILTERS (WITH FIX) ---
+  // --- 3. STATE FOR FILTERS (WITH FIX) ---
   const [selectedCompany, setSelectedCompany] = React.useState<string>("all")
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>({
     from: startOfDay(subDays(new Date(), 29)), // Use startOfDay for the 'from' date
@@ -94,13 +98,13 @@ export default function DashboardPage() {
     toast.success("Dashboard data loaded!")
   }, [sheetId, getGoogleAccessToken])
 
-  // --- 3. AUTO-FETCH DATA ON PAGE LOAD ---
+  // --- 4. AUTO-FETCH DATA ON PAGE LOAD ---
   React.useEffect(() => {
     fetchAllData()
   }, [fetchAllData])
   // --- END AUTO-FETCH ---
 
-  // --- 4. UPDATE MEMOS TO USE FILTERS (WITH FIX) ---
+  // --- 5. UPDATE MEMOS TO USE FILTERS (WITH FIX) ---
   const filteredTransactions = React.useMemo(() => {
     return allTransactions.filter((t) => {
       // Filter by company
@@ -109,6 +113,10 @@ export default function DashboardPage() {
 
       // Filter by date
       let dateMatch = true
+      // Ensure date is valid before parsing
+      if (!t.date || t.date.split("/").length !== 3) {
+        return false // Skip invalid date formats
+      }
       const transactionDate = parse(t.date, "MM/dd/yyyy", new Date())
 
       // --- LOGIC FIX IS HERE ---
@@ -117,7 +125,7 @@ export default function DashboardPage() {
         const startDate = startOfDay(dateRange.from)
         // If we also have a 'to' date, use it. Otherwise, use the 'from' date as the end date.
         const endDate = endOfDay(dateRange.to || dateRange.from)
-        
+
         dateMatch = transactionDate >= startDate && transactionDate <= endDate
       } else {
         // No date range selected, so all dates match
@@ -144,6 +152,22 @@ export default function DashboardPage() {
     return { totalIncome, totalExpense, netIncome }
   }, [filteredTransactions]) // Depend on filteredTransactions
 
+  // --- 6. NEW: DATA PROCESSING FOR PIE CHART ---
+  const expensePieData = React.useMemo(() => {
+    const expenseMap = new Map<string, number>()
+
+    filteredTransactions.forEach((t) => {
+      if (t.expense > 0 && t.category) {
+        const currentTotal = expenseMap.get(t.category) || 0
+        expenseMap.set(t.category, currentTotal + t.expense)
+      }
+    })
+
+    // Convert map to array format for Recharts
+    return Array.from(expenseMap, ([name, value]) => ({ name, value }))
+  }, [filteredTransactions])
+  // --- END: DATA PROCESSING ---
+
   const recentTransactions = filteredTransactions.slice(0, 5)
   // --- END UPDATED MEMOS ---
 
@@ -154,7 +178,7 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-semibold md:text-3xl">
           Welcome, {userData?.displayName || "User"}!
         </h1>
-        {/* --- 5. NEW FILTER CONTROLS --- */}
+        {/* --- 7. FILTER CONTROLS --- */}
         <div className="flex w-full flex-col items-center gap-2 md:w-auto md:flex-row">
           {/* Company Filter */}
           <Select
@@ -253,7 +277,7 @@ export default function DashboardPage() {
               No transactions found
             </h3>
             <p className="text-sm text-muted-foreground">
-              {/* 7. Updated text for empty state */}
+              {/* 8. Updated text for empty state */}
               Go to the "Transactions" page to add your first one, or try
               adjusting your filters.
             </p>
@@ -264,6 +288,7 @@ export default function DashboardPage() {
       {/* --- Data Display State --- */}
       {!isLoadingData && allTransactions.length > 0 && (
         <>
+          {/* --- 9. SUMMARY CARDS --- */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {/* Total Income */}
             <Card>
@@ -278,7 +303,6 @@ export default function DashboardPage() {
                   {currencyFormatter.format(totalIncome)}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {/* 6. Dynamic Description */}
                   {selectedCompany === "all"
                     ? `Across all ${companies.length} companies`
                     : `For ${selectedCompany}`}
@@ -327,18 +351,60 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </div>
+          {/* --- END SUMMARY CARDS --- */}
 
-          {/* --- Recent Transactions List --- */}
+          {/* --- 10. NEW: CHARTS SECTION --- */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Bar Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Income vs. Expense</CardTitle>
+                <CardDescription>
+                  A summary of your income and expenses for the selected period.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <IncomeExpenseChart
+                  totalIncome={totalIncome}
+                  totalExpense={totalExpense}
+                />
+              </CardContent>
+            </Card>
+
+            {/* Pie Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Expenses by Category</CardTitle>
+                <CardDescription>
+                  A breakdown of your expenses by category.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {expensePieData.length > 0 ? (
+                  <ExpensePieChart data={expensePieData} />
+                ) : (
+                  <div className="flex h-[300px] items-center justify-center">
+                    <p className="text-muted-foreground">
+                      No expense data for this period.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+          {/* --- END: CHARTS SECTION --- */}
+
+          {/* --- 11. Recent Transactions List --- */}
           <Card className="lg:col-span-3">
             <CardHeader>
               <CardTitle>Recent Transactions</CardTitle>
               <CardDescription>
-                {/* 7. Dynamic Description */}
+                {/* 12. Dynamic Description */}
                 Your 5 most recent transactions matching the filters.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* 8. Check filtered list length */}
+              {/* 13. Check filtered list length */}
               {recentTransactions.length > 0 ? (
                 <div className="space-y-4">
                   {recentTransactions.map((t) => (

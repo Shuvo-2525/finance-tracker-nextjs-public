@@ -40,6 +40,25 @@ export type TransactionData = {
   receiptLink?: string // <-- ADD THIS
 }
 
+// --- NEW: BILL TYPES ---
+export type BillStatus = "Pending" | "Paid"
+
+export type Bill = {
+  rowIndex: number
+  billId: string
+  dueDate: string
+  payee: string
+  amount: number
+  status: BillStatus
+}
+
+export type BillData = {
+  dueDate: Date
+  payee: string
+  amount: number
+}
+// --- END NEW BILL TYPES ---
+
 /**
  * Fetches all companies from the 'Companies' tab in the Google Sheet.
  * @param sheetId The ID of the Google Sheet.
@@ -458,6 +477,244 @@ export async function deleteTransaction(
   } catch (error) {
     console.error("Error in deleteTransaction:", error)
     toast.error("Could not delete your transaction.")
+    return false
+  }
+}
+
+// =================================================================
+// --- NEW BILL TRACKING FUNCTIONS ---
+// =================================================================
+
+/**
+ * Fetches all bills from the 'Bills' tab.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @returns A promise that resolves to an array of Bill objects.
+ */
+export async function getBills(
+  sheetId: string,
+  accessToken: string
+): Promise<Bill[]> {
+  try {
+    const range = "Bills!A2:E"
+    const url = `${SHEETS_API_URL}/${sheetId}/values/${range}?majorDimension=ROWS`
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error fetching bills:", errorData)
+      throw new Error("Failed to fetch bills from Google Sheet.")
+    }
+
+    const data = await response.json()
+    const values = data.values || []
+
+    const bills: Bill[] = values
+      .map((row: any[], index: number) => ({
+        rowIndex: index + 2,
+        billId: row[0] || "",
+        dueDate: row[1] || "",
+        payee: row[2] || "",
+        amount: parseFloat(row[3]) || 0,
+        status: row[4] === "Paid" ? "Paid" : "Pending",
+      }))
+      .filter((b: Bill) => b.billId && b.payee && b.amount > 0) // Filter out empty rows
+
+    return bills.sort(
+      (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+    )
+  } catch (error) {
+    console.error("Error in getBills:", error)
+    toast.error("Could not load your bills.")
+    return []
+  }
+}
+
+/**
+ * Adds a new bill to the 'Bills' tab.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @param bill The bill data to add.
+ * @returns A promise that resolves to true on success, false on failure.
+ */
+export async function addBill(
+  sheetId: string,
+  accessToken: string,
+  bill: BillData
+): Promise<boolean> {
+  try {
+    const range = "Bills!A:E" // Append to the first empty row
+    const url = `${SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED`
+
+    const formattedDate = format(bill.dueDate, "MM/dd/yyyy")
+    const billId = `bill-${Date.now()}`
+    const status = "Pending"
+
+    const newRow = [billId, formattedDate, bill.payee, bill.amount, status]
+
+    const body = {
+      values: [newRow],
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error adding bill:", errorData)
+      throw new Error("Failed to add bill to Google Sheet.")
+    }
+
+    toast.success(`Bill for ${bill.payee} added successfully!`)
+    return true
+  } catch (error) {
+    console.error("Error in addBill:", error)
+    toast.error("Could not add your bill.")
+    return false
+  }
+}
+
+/**
+ * Updates the status of a specific bill (e.g., "Pending" to "Paid").
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @param rowIndex The row number to update.
+ * @param status The new status.
+ * @returns A promise that resolves to true on success, false on failure.
+ */
+export async function updateBillStatus(
+  sheetId: string,
+  accessToken: string,
+  rowIndex: number,
+  status: BillStatus
+): Promise<boolean> {
+  try {
+    const range = `Bills!E${rowIndex}` // Target only the Status cell (Column E)
+    const url = `${SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=USER_ENTERED`
+
+    const body = {
+      values: [[status]],
+    }
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error updating bill status:", errorData)
+      throw new Error("Failed to update bill status in Google Sheet.")
+    }
+
+    toast.success(`Bill status updated to ${status}!`)
+    return true
+  } catch (error) {
+    console.error("Error in updateBillStatus:", error)
+    toast.error("Could not update bill status.")
+    return false
+  }
+}
+
+// Helper to find the numeric sheetId for a given tab name
+// We need this for delete operations
+async function getSheetIdByTitle(
+  spreadsheetId: string,
+  accessToken: string,
+  title: string
+): Promise<number | null> {
+  try {
+    const url = `${SHEETS_API_URL}/${spreadsheetId}?fields=sheets(properties(sheetId,title))`
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+    if (!response.ok) throw new Error("Failed to get sheet properties.")
+
+    const spreadsheet = await response.json()
+    const sheet = spreadsheet.sheets.find(
+      (s: any) => s.properties.title === title
+    )
+    return sheet?.properties?.sheetId || null
+  } catch (error) {
+    console.error("Error finding sheet ID:", error)
+    return null
+  }
+}
+
+/**
+ * Deletes a specific row from the 'Bills' tab.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @param rowIndex The row number to delete.
+ * @returns A promise that resolves to true on success, false on failure.
+ */
+export async function deleteBill(
+  sheetId: string,
+  accessToken: string,
+  rowIndex: number
+): Promise<boolean> {
+  try {
+    // 1. Find the numeric ID for the "Bills" sheet
+    const billsSheetId = await getSheetIdByTitle(sheetId, accessToken, "Bills")
+    if (billsSheetId === null) {
+      throw new Error("Could not find 'Bills' sheet.")
+    }
+
+    // 2. Send the batch update request to delete the row
+    const url = `${SHEETS_API_URL}/${sheetId}:batchUpdate`
+    const body = {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId: billsSheetId,
+              dimension: "ROWS",
+              startIndex: rowIndex - 1, // 0-based index
+              endIndex: rowIndex,
+            },
+          },
+        },
+      ],
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error deleting bill:", errorData)
+      throw new Error("Failed to delete bill from Google Sheet.")
+    }
+
+    toast.success(`Bill deleted successfully!`)
+    return true
+  } catch (error) {
+    console.error("Error in deleteBill:", error)
+    const message = error instanceof Error ? error.message : String(error)
+    toast.error(message || "Could not delete your bill.")
     return false
   }
 }

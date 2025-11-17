@@ -12,6 +12,12 @@ import {
   Menu,
   Package2,
   Search,
+  Home,
+  Building,
+  ArrowLeftRight,
+  LayoutGrid,
+  FileText,
+  Receipt, // <-- 1. Import the new icon
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -24,8 +30,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { ModeToggle } from "@/app/components/mode-toggle"
+
+// 3. Define links here to use in both places
+const navLinks = [
+  { href: "/dashboard", label: "Overview", icon: Home },
+  { href: "/dashboard/companies", label: "Companies", icon: Building },
+  {
+    href: "/dashboard/transactions",
+    label: "Transactions",
+    icon: ArrowLeftRight,
+  },
+  { href: "/dashboard/categories", label: "Categories", icon: LayoutGrid },
+  { href: "/dashboard/reports", label: "Reports", icon: FileText },
+  { href: "/dashboard/bills", label: "Bills", icon: Receipt }, // <-- 2. Add the new link
+]
 
 export function DashboardHeader() {
   const { user } = useAuth()
@@ -52,38 +77,26 @@ export function DashboardHeader() {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="flex flex-col">
+          <SheetTitle className="sr-only">Dashboard Menu</SheetTitle>
           <nav className="grid gap-2 text-lg font-medium">
             <Link
-              href="#"
-              className="flex items-center gap-2 text-lg font-semibold"
+              href="/"
+              className="flex items-center gap-2 text-lg font-semibold mb-4"
             >
               <Package2 className="h-6 w-6" />
-              <span className="sr-only">Finance Tracker</span>
+              <span>Finance Tracker</span>
             </Link>
-            <Link
-              href="/dashboard"
-              className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
-            >
-              Overview
-            </Link>
-            <Link
-              href="/dashboard/companies"
-              className="mx-[-0.65rem] flex items-center gap-4 rounded-xl bg-muted px-3 py-2 text-foreground hover:text-foreground"
-            >
-              Companies
-            </Link>
-            <Link
-              href="#"
-              className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
-            >
-              Transactions
-            </Link>
-            <Link
-              href="#"
-              className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
-            >
-              Categories
-            </Link>
+            {/* 5. Map over the links array */}
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="mx-[-0.65rem] flex items-center gap-4 rounded-xl px-3 py-2 text-muted-foreground hover:text-foreground"
+              >
+                <link.icon className="h-5 w-5" />
+                {link.label}
+              </Link>
+            ))}
           </nav>
         </SheetContent>
       </Sheet>

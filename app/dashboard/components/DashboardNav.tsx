@@ -8,6 +8,8 @@ import {
   ArrowLeftRight,
   LayoutGrid,
   Package2,
+  FileText,
+  Receipt, // <-- 1. Import the new icon
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -20,6 +22,8 @@ const navLinks = [
     icon: ArrowLeftRight,
   },
   { href: "/dashboard/categories", label: "Categories", icon: LayoutGrid },
+  { href: "/dashboard/reports", label: "Reports", icon: FileText },
+  { href: "/dashboard/bills", label: "Bills", icon: Receipt }, // <-- 2. Add the new link
 ]
 
 export function DashboardNav() {
