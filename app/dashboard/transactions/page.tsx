@@ -2,11 +2,19 @@
 
 import * as React from "react"
 import { format } from "date-fns"
-import { Calendar as CalendarIcon, Loader2, PlusCircle, RefreshCw } from "lucide-react"
+import {
+  Calendar as CalendarIcon,
+  Loader2,
+  PlusCircle,
+  RefreshCw,
+  MoreHorizontal, // For the ... button
+  Trash2, // Delete icon
+  Pencil, // Edit icon
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import {
   Card,
@@ -29,16 +37,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+
 import { useDashboard } from "@/app/dashboard/context/DashboardContext"
 import {
   getCompanies,
   getCategories,
   getTransactions,
   addTransaction,
+  deleteTransaction, // Import delete function
   type Company,
   type Category,
   type Transaction,
 } from "@/lib/sheets"
+// Import the new Edit sheet
+import { EditTransactionSheet } from "./EditTransactionSheet"
 
 // Helper to format currency
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -57,6 +85,7 @@ export default function TransactionsPage() {
   // State for loading
   const [isLoadingData, setIsLoadingData] = React.useState(false)
   const [isAdding, setIsAdding] = React.useState(false)
+  const [isDeleting, setIsDeleting] = React.useState(false)
 
   // State for the new transaction form
   const [formType, setFormType] = React.useState<"Income" | "Expense">(
@@ -67,6 +96,13 @@ export default function TransactionsPage() {
   const [formCategory, setFormCategory] = React.useState<string>("")
   const [formAmount, setFormAmount] = React.useState<string>("")
   const [formDescription, setFormDescription] = React.useState<string>("")
+
+  // --- NEW STATE FOR EDIT & DELETE ---
+  const [selectedTransaction, setSelectedTransaction] =
+    React.useState<Transaction | null>(null)
+  const [isEditSheetOpen, setIsEditSheetOpen] = React.useState(false)
+  const [isDeleteAlertOpen, setIsDeleteAlertOpen] = React.useState(false)
+  // --- END NEW STATE ---
 
   // Fetch all data (companies, categories, transactions)
   const fetchAllData = React.useCallback(async () => {
@@ -92,6 +128,19 @@ export default function TransactionsPage() {
     setTransactions(fetchedTransactions)
     setIsLoadingData(false)
   }, [sheetId, getGoogleAccessToken])
+
+  // --- NEW: Handle just refreshing transactions (after an update/delete) ---
+  const refreshTransactions = React.useCallback(async () => {
+    if (!sheetId) return
+    
+    // We don't need to set the big loader, just update in background
+    const accessToken = await getGoogleAccessToken()
+    if (!accessToken) return
+
+    const fetchedTransactions = await getTransactions(sheetId, accessToken)
+    setTransactions(fetchedTransactions)
+  }, [sheetId, getGoogleAccessToken])
+  // --- END NEW ---
 
   // Reset the form fields
   const resetForm = () => {
@@ -144,241 +193,354 @@ export default function TransactionsPage() {
     if (success) {
       resetForm()
       // Fetch only new transactions to update the list
-      const fetchedTransactions = await getTransactions(sheetId, accessToken)
-      setTransactions(fetchedTransactions)
+      await refreshTransactions()
     }
 
     setIsAdding(false)
   }
 
+  // --- NEW: Functions to handle actions ---
+  const handleEditClick = (transaction: Transaction) => {
+    setSelectedTransaction(transaction)
+    setIsEditSheetOpen(true)
+  }
+
+  const handleDeleteClick = (transaction: Transaction) => {
+    setSelectedTransaction(transaction)
+    setIsDeleteAlertOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!sheetId || !selectedTransaction) return
+
+    setIsDeleting(true)
+    const accessToken = await getGoogleAccessToken()
+    if (!accessToken) {
+      setIsDeleting(false)
+      return
+    }
+
+    const success = await deleteTransaction(
+      sheetId,
+      accessToken,
+      selectedTransaction.rowIndex
+    )
+
+    if (success) {
+      await refreshTransactions()
+    }
+
+    setIsDeleting(false)
+    setIsDeleteAlertOpen(false)
+    setSelectedTransaction(null)
+  }
+  // --- END NEW ---
+
   // Filter categories based on the selected form type
   const availableCategories = categories.filter((c) => c.type === formType)
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      {/* --- Add Transaction Card --- */}
-      <Card className="lg:col-span-1">
-        <CardHeader>
-          <CardTitle>Add New Transaction</CardTitle>
-          <CardDescription>
-            Log your latest income or expense.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Type Toggle */}
-            <div>
-              <Label>Transaction Type</Label>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant={formType === "Income" ? "default" : "outline"}
-                  onClick={() => {
-                    setFormType("Income")
-                    setFormCategory("") // Reset category on type change
-                  }}
-                  disabled={isAdding}
-                >
-                  Income
-                </Button>
-                <Button
-                  type="button"
-                  variant={formType === "Expense" ? "default" : "outline"}
-                  onClick={() => {
-                    setFormType("Expense")
-                    setFormCategory("") // Reset category on type change
-                  }}
-                  disabled={isAdding}
-                >
-                  Expense
-                </Button>
-              </div>
-            </div>
-
-            {/* Date Picker */}
-            <div>
-              <Label htmlFor="date">Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
+    <>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* --- Add Transaction Card --- */}
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardTitle>Add New Transaction</CardTitle>
+            <CardDescription>
+              Log your latest income or expense.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Type Toggle */}
+              <div>
+                <Label>Transaction Type</Label>
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !formDate && "text-muted-foreground"
-                    )}
+                    type="button"
+                    variant={formType === "Income" ? "default" : "outline"}
+                    onClick={() => {
+                      setFormType("Income")
+                      setFormCategory("") // Reset category on type change
+                    }}
                     disabled={isAdding}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formDate ? format(formDate, "PPP") : <span>Pick a date</span>}
+                    Income
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={formDate}
-                    onSelect={setFormDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            {/* Amount */}
-            <div>
-              <Label htmlFor="amount">Amount</Label>
-              <Input
-                id="amount"
-                type="number"
-                placeholder="0.00"
-                step="0.01"
-                value={formAmount}
-                onChange={(e) => setFormAmount(e.target.value)}
-                disabled={isAdding}
-              />
-            </div>
-
-            {/* Company Select */}
-            <div>
-              <Label htmlFor="company">Company</Label>
-              <Select
-                value={formCompany}
-                onValueChange={setFormCompany}
-                disabled={isAdding || isLoadingData}
-              >
-                <SelectTrigger id="company">
-                  <SelectValue placeholder="Select a company..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {companies.map((company) => (
-                    <SelectItem key={company.id} value={company.name}>
-                      {company.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Category Select */}
-            <div>
-              <Label htmlFor="category">Category</Label>
-              <Select
-                value={formCategory}
-                onValueChange={setFormCategory}
-                disabled={isAdding || isLoadingData || !formType}
-              >
-                <SelectTrigger id="category">
-                  <SelectValue placeholder="Select a category..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableCategories.length > 0 ? (
-                    availableCategories.map((category) => (
-                      <SelectItem key={category.id} value={category.name}>
-                        {category.name}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <div className="p-2 text-center text-sm text-muted-foreground">
-                      No {formType.toLowerCase()} categories found.
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Description */}
-            {/* Description */}
-            <div>
-              <Label htmlFor="description">Description (Optional)</Label>
-              <Input
-                id="description"
-                placeholder="e.g., Monthly software subscription"
-                value={formDescription}
-                onChange={(e) => setFormDescription(e.target.value)}
-                disabled={isAdding}
-              />
-            </div>
-            {/* Submit Button */}
-            <Button type="submit" className="w-full" disabled={isAdding}>
-              {isAdding ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <PlusCircle className="mr-2 h-4 w-4" />
-              )}
-              {isAdding ? "Adding..." : "Add Transaction"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* --- Recent Transactions Card --- */}
-      <Card className="lg:col-span-2">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Recent Transactions</CardTitle>
-              <CardDescription>
-                Showing your last {transactions.length} transactions.
-              </CardDescription>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchAllData}
-              disabled={isLoadingData}
-            >
-              <RefreshCw
-                className={cn(
-                  "mr-2 h-4 w-4",
-                  isLoadingData && "animate-spin"
-                )}
-              />
-              Load Data
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoadingData ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              <p className="ml-2">Loading all data...</p>
-            </div>
-          ) : transactions.length === 0 ? (
-            <p className="py-12 text-center text-muted-foreground">
-              Click "Load Data" to see your transactions.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {transactions.map((t, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between rounded-md border bg-background p-4"
-                >
-                  <div>
-                    <p className="font-medium">{t.category}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {t.company}
-                      {t.description && ` - ${t.description}`}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p
-                      className={cn(
-                        "font-semibold",
-                        t.income > 0 ? "text-green-600" : "text-red-600"
-                      )}
-                    >
-                      {t.income > 0
-                        ? currencyFormatter.format(t.income)
-                        : currencyFormatter.format(t.expense * -1)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{t.date}</p>
-                  </div>
+                  <Button
+                    type="button"
+                    variant={formType === "Expense" ? "default" : "outline"}
+                    onClick={() => {
+                      setFormType("Expense")
+                      setFormCategory("") // Reset category on type change
+                    }}
+                    disabled={isAdding}
+                  >
+                    Expense
+                  </Button>
                 </div>
-              ))}
+              </div>
+
+              {/* Date Picker */}
+              <div>
+                <Label htmlFor="date">Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !formDate && "text-muted-foreground"
+                      )}
+                      disabled={isAdding}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formDate ? (
+                        format(formDate, "PPP")
+                      ) : (
+                        <span>Pick a date</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={formDate}
+                      onSelect={setFormDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Amount */}
+              <div>
+                <Label htmlFor="amount">Amount</Label>
+                <Input
+                  id="amount"
+                  type="number"
+                  placeholder="0.00"
+                  step="0.01"
+                  value={formAmount}
+                  onChange={(e) => setFormAmount(e.target.value)}
+                  disabled={isAdding}
+                />
+              </div>
+
+              {/* Company Select */}
+              <div>
+                <Label htmlFor="company">Company</Label>
+                <Select
+                  value={formCompany}
+                  onValueChange={setFormCompany}
+                  disabled={isAdding || isLoadingData}
+                >
+                  <SelectTrigger id="company">
+                    <SelectValue placeholder="Select a company..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.name}>
+                        {company.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Category Select */}
+              <div>
+                <Label htmlFor="category">Category</Label>
+                <Select
+                  value={formCategory}
+                  onValueChange={setFormCategory}
+                  disabled={isAdding || isLoadingData || !formType}
+                >
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder="Select a category..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCategories.length > 0 ? (
+                      availableCategories.map((category) => (
+                        <SelectItem key={category.id} value={category.name}>
+                          {category.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <div className="p-2 text-center text-sm text-muted-foreground">
+                        No {formType.toLowerCase()} categories found.
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <Label htmlFor="description">Description (Optional)</Label>
+                <Input
+                  id="description"
+                  placeholder="e.g., Monthly software subscription"
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  disabled={isAdding}
+                />
+              </div>
+              {/* Submit Button */}
+              <Button type="submit" className="w-full" disabled={isAdding}>
+                {isAdding ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                )}
+                {isAdding ? "Adding..." : "Add Transaction"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* --- Recent Transactions Card --- */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Recent Transactions</CardTitle>
+                <CardDescription>
+                  Showing your last {transactions.length} transactions.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchAllData}
+                disabled={isLoadingData}
+              >
+                <RefreshCw
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    isLoadingData && "animate-spin"
+                  )}
+                />
+                Load Data
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingData ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2
+                  className="h-8 w-8 animate-spin text-muted-foreground"
+                />
+                <p className="ml-2">Loading all data...</p>
+              </div>
+            ) : transactions.length === 0 ? (
+              <p className="py-12 text-center text-muted-foreground">
+                Click "Load Data" to see your transactions.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {transactions.map((t) => (
+                  <div
+                    key={t.rowIndex} // Use rowIndex as the key
+                    className="flex items-center justify-between rounded-md border bg-background p-4"
+                  >
+                    {/* Transaction Info */}
+                    <div>
+                      <p className="font-medium">{t.category}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {t.company}
+                        {t.description && ` - ${t.description}`}
+                      </p>
+                    </div>
+
+                    {/* Amount, Date, and Actions */}
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p
+                          className={cn(
+                            "font-semibold",
+                            t.income > 0 ? "text-green-600" : "text-red-600"
+                          )}
+                        >
+                          {t.income > 0
+                            ? currencyFormatter.format(t.income)
+                            : currencyFormatter.format(t.expense * -1)}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {t.date}
+                        </p>
+                      </div>
+
+                      {/* --- NEW: Action Dropdown Menu --- */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Actions</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleEditClick(t)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteClick(t)}
+                            className="text-red-600 focus:text-red-600"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      {/* --- END NEW --- */}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* --- NEW: Edit Sheet Portal --- */}
+      <EditTransactionSheet
+        isOpen={isEditSheetOpen}
+        setIsOpen={setIsEditSheetOpen}
+        transaction={selectedTransaction}
+        companies={companies}
+        categories={categories}
+        onTransactionUpdated={refreshTransactions}
+      />
+
+      {/* --- NEW: Delete Alert Portal --- */}
+      <AlertDialog
+        open={isDeleteAlertOpen}
+        onOpenChange={setIsDeleteAlertOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the
+              transaction from your Google Sheet.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={isDeleting}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {isDeleting && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

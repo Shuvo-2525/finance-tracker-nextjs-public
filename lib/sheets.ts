@@ -17,14 +17,25 @@ export type Category = {
   type: "Income" | "Expense"
 }
 
-// 2. DEFINE THE TRANSACTION TYPE
+// 2. DEFINE THE TRANSACTION TYPE (MODIFIED)
 export type Transaction = {
+  rowIndex: number // <-- ADD THIS
   date: string
   company: string
   category: string
   description: string
   income: number
   expense: number
+}
+
+// This is the data shape for *updating* a transaction
+export type TransactionData = {
+  date: Date
+  company: string
+  category: string
+  description: string
+  amount: number
+  type: "Income" | "Expense"
 }
 
 /**
@@ -211,7 +222,7 @@ export async function addCategory(
   }
 }
 
-// 3. ADD GETTRANSACTIONS FUNCTION
+// 3. GETTRANSACTIONS FUNCTION (MODIFIED)
 /**
  * Fetches the 100 most recent transactions from the 'Transactions' tab.
  * @param sheetId The ID of the Google Sheet.
@@ -243,14 +254,20 @@ export async function getTransactions(
     const values = data.values || []
 
     // Map rows to objects and reverse to get most recent first
-    const transactions: Transaction[] = values.map((row: any[]) => ({
-      date: row[0] || "",
-      company: row[1] || "",
-      category: row[2] || "",
-      description: row[3] || "",
-      income: parseFloat(row[4]) || 0,
-      expense: parseFloat(row[5]) || 0,
-    }))
+    // We add `index + 2` to get the real sheet row number (since we start at A2)
+    const transactions: Transaction[] = values
+      .map((row: any[], index: number) => ({
+        rowIndex: index + 2, // <-- THIS IS THE KEY
+        date: row[0] || "",
+        company: row[1] || "",
+        category: row[2] || "",
+        description: row[3] || "",
+        income: parseFloat(row[4]) || 0,
+        expense: parseFloat(row[5]) || 0,
+      }))
+      .filter(
+        (t: Transaction) => t.date || t.company || t.category || t.income || t.expense
+      ) // Filter out empty rows
 
     return transactions.reverse().slice(0, 100) // Return 100 most recent
   } catch (error) {
@@ -260,7 +277,7 @@ export async function getTransactions(
   }
 }
 
-// 4. ADD ADDTRANSACTION FUNCTION
+// 4. ADDTRANSACTION FUNCTION
 /**
  * Adds a new transaction to the 'Transactions' tab.
  * @param sheetId The ID of the Google Sheet.
@@ -271,14 +288,7 @@ export async function getTransactions(
 export async function addTransaction(
   sheetId: string,
   accessToken: string,
-  transaction: {
-    date: Date
-    company: string
-    category: string
-    description: string
-    amount: number
-    type: "Income" | "Expense"
-  }
+  transaction: TransactionData
 ): Promise<boolean> {
   try {
     const range = "Transactions!A:F" // Append to the first empty row
@@ -286,7 +296,7 @@ export async function addTransaction(
 
     // Format date to "MM/dd/yyyy"
     const formattedDate = format(transaction.date, "MM/dd/yyyy")
-    
+
     // Prepare row data based on transaction type
     const newRow = [
       formattedDate,
@@ -321,6 +331,122 @@ export async function addTransaction(
   } catch (error) {
     console.error("Error in addTransaction:", error)
     toast.error("Could not add your transaction.")
+    return false
+  }
+}
+
+// 5. --- NEW FUNCTION: updateTransaction ---
+/**
+ * Updates a specific transaction row in the 'Transactions' tab.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @param rowIndex The row number to update.
+ * @param transaction The new transaction data.
+ * @returns A promise that resolves to true on success, false on failure.
+ */
+export async function updateTransaction(
+  sheetId: string,
+  accessToken: string,
+  rowIndex: number,
+  transaction: TransactionData
+): Promise<boolean> {
+  try {
+    // Construct the specific range, e.g., "Transactions!A10:F10"
+    const range = `Transactions!A${rowIndex}:F${rowIndex}`
+    const url = `${SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=USER_ENTERED`
+
+    const formattedDate = format(transaction.date, "MM/dd/yyyy")
+    const updatedRow = [
+      formattedDate,
+      transaction.company,
+      transaction.category,
+      transaction.description,
+      transaction.type === "Income" ? transaction.amount : "",
+      transaction.type === "Expense" ? transaction.amount : "",
+    ]
+
+    const body = {
+      values: [updatedRow],
+    }
+
+    const response = await fetch(url, {
+      method: "PUT", // Use PUT for updates
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error updating transaction:", errorData)
+      throw new Error("Failed to update transaction in Google Sheet.")
+    }
+
+    toast.success(`Transaction updated successfully!`)
+    return true
+  } catch (error) {
+    console.error("Error in updateTransaction:", error)
+    toast.error("Could not update your transaction.")
+    return false
+  }
+}
+
+// 6. --- NEW FUNCTION: deleteTransaction ---
+/**
+ * Deletes a specific row from the 'Transactions' tab.
+ * @param sheetId The ID of the Google Sheet.
+ * @param accessToken A valid Google API access token.
+ * @param rowIndex The row number to delete.
+ * @returns A promise that resolves to true on success, false on failure.
+ */
+export async function deleteTransaction(
+  sheetId: string,
+  accessToken: string,
+  rowIndex: number
+): Promise<boolean> {
+  try {
+    const url = `${SHEETS_API_URL}/${sheetId}:batchUpdate`
+
+    // Note: The "Transactions" sheet has a sheetId of 0 (from our setup API)
+    // API indexes are 0-based, but our rowIndex is 1-based.
+    // So, to delete row 10 (rowIndex: 10), we delete index 9 to 10.
+    const body = {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId: 0, // 0 is the "Transactions" sheetId
+              dimension: "ROWS",
+              startIndex: rowIndex - 1, // 0-based index
+              endIndex: rowIndex,
+            },
+          },
+        },
+      ],
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Error deleting transaction:", errorData)
+      throw new Error("Failed to delete transaction from Google Sheet.")
+    }
+
+    toast.success(`Transaction deleted successfully!`)
+    return true
+  } catch (error) {
+    console.error("Error in deleteTransaction:", error)
+    toast.error("Could not delete your transaction.")
     return false
   }
 }
