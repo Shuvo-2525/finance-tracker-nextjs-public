@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link" // <-- Import Link
 import { format } from "date-fns"
 import {
   Calendar as CalendarIcon,
@@ -10,6 +11,8 @@ import {
   MoreHorizontal, // For the ... button
   Trash2, // Delete icon
   Pencil, // Edit icon
+  LinkIcon, // <-- ADD THIS
+  X, // <-- ADD THIS for clearing file
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -64,6 +67,7 @@ import {
   type Company,
   type Category,
   type Transaction,
+  type TransactionData, // <-- Import TransactionData
 } from "@/lib/sheets"
 // Import the new Edit sheet
 import { EditTransactionSheet } from "./EditTransactionSheet"
@@ -75,7 +79,8 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 })
 
 export default function TransactionsPage() {
-  const { sheetId, getGoogleAccessToken } = useDashboard()
+  const { sheetId, getGoogleAccessToken, uploadFileToDrive } = useDashboard() // <-- Get uploadFileToDrive
+  const fileInputRef = React.useRef<HTMLInputElement>(null) // <-- Ref for file input
 
   // State for data
   const [companies, setCompanies] = React.useState<Company[]>([])
@@ -85,6 +90,7 @@ export default function TransactionsPage() {
   // State for loading
   const [isLoadingData, setIsLoadingData] = React.useState(false)
   const [isAdding, setIsAdding] = React.useState(false)
+  const [isUploading, setIsUploading] = React.useState(false) // <-- ADD THIS
   const [isDeleting, setIsDeleting] = React.useState(false)
 
   // State for the new transaction form
@@ -96,6 +102,7 @@ export default function TransactionsPage() {
   const [formCategory, setFormCategory] = React.useState<string>("")
   const [formAmount, setFormAmount] = React.useState<string>("")
   const [formDescription, setFormDescription] = React.useState<string>("")
+  const [formReceiptFile, setFormReceiptFile] = React.useState<File | null>(null) // <-- ADD THIS
 
   // --- NEW STATE FOR EDIT & DELETE ---
   const [selectedTransaction, setSelectedTransaction] =
@@ -132,7 +139,7 @@ export default function TransactionsPage() {
   // --- NEW: Handle just refreshing transactions (after an update/delete) ---
   const refreshTransactions = React.useCallback(async () => {
     if (!sheetId) return
-    
+
     // We don't need to set the big loader, just update in background
     const accessToken = await getGoogleAccessToken()
     if (!accessToken) return
@@ -150,6 +157,23 @@ export default function TransactionsPage() {
     setFormAmount("")
     setFormDescription("")
     setFormType("Expense")
+    setFormReceiptFile(null) // <-- ADD THIS
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "" // <-- ADD THIS
+    }
+  }
+
+  // Handle file input change
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Optional: Check file size or type
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        toast.error("File is too large. Max 10MB.")
+        return
+      }
+      setFormReceiptFile(file)
+    }
   }
 
   // Handle form submission
@@ -175,20 +199,41 @@ export default function TransactionsPage() {
     // --- End Validation ---
 
     setIsAdding(true)
+    let receiptUrl: string | null = null
+
+    // --- NEW: File Upload Logic ---
+    if (formReceiptFile) {
+      setIsUploading(true)
+      receiptUrl = await uploadFileToDrive(formReceiptFile)
+      setIsUploading(false)
+
+      if (!receiptUrl) {
+        // Upload failed, stop the submission
+        toast.error("Receipt upload failed. Transaction not added.")
+        setIsAdding(false)
+        return
+      }
+    }
+    // --- END: File Upload Logic ---
+
     const accessToken = await getGoogleAccessToken()
     if (!accessToken) {
       setIsAdding(false)
       return
     }
 
-    const success = await addTransaction(sheetId, accessToken, {
+    // --- MODIFIED: Pass receiptUrl to addTransaction ---
+    const transactionData: TransactionData = {
       date: formDate,
       company: formCompany,
       category: formCategory,
       description: formDescription,
       amount: amount,
       type: formType,
-    })
+      receiptLink: receiptUrl || undefined, // Add the link if it exists
+    }
+
+    const success = await addTransaction(sheetId, accessToken, transactionData)
 
     if (success) {
       resetForm()
@@ -239,6 +284,9 @@ export default function TransactionsPage() {
   // Filter categories based on the selected form type
   const availableCategories = categories.filter((c) => c.type === formType)
 
+  // Disable all form fields if any operation is in progress
+  const isFormDisabled = isAdding || isUploading || isLoadingData
+
   return (
     <>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -263,7 +311,7 @@ export default function TransactionsPage() {
                       setFormType("Income")
                       setFormCategory("") // Reset category on type change
                     }}
-                    disabled={isAdding}
+                    disabled={isFormDisabled}
                   >
                     Income
                   </Button>
@@ -274,7 +322,7 @@ export default function TransactionsPage() {
                       setFormType("Expense")
                       setFormCategory("") // Reset category on type change
                     }}
-                    disabled={isAdding}
+                    disabled={isFormDisabled}
                   >
                     Expense
                   </Button>
@@ -292,7 +340,7 @@ export default function TransactionsPage() {
                         "w-full justify-start text-left font-normal",
                         !formDate && "text-muted-foreground"
                       )}
-                      disabled={isAdding}
+                      disabled={isFormDisabled}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {formDate ? (
@@ -323,7 +371,7 @@ export default function TransactionsPage() {
                   step="0.01"
                   value={formAmount}
                   onChange={(e) => setFormAmount(e.target.value)}
-                  disabled={isAdding}
+                  disabled={isFormDisabled}
                 />
               </div>
 
@@ -333,7 +381,7 @@ export default function TransactionsPage() {
                 <Select
                   value={formCompany}
                   onValueChange={setFormCompany}
-                  disabled={isAdding || isLoadingData}
+                  disabled={isFormDisabled}
                 >
                   <SelectTrigger id="company">
                     <SelectValue placeholder="Select a company..." />
@@ -354,7 +402,7 @@ export default function TransactionsPage() {
                 <Select
                   value={formCategory}
                   onValueChange={setFormCategory}
-                  disabled={isAdding || isLoadingData || !formType}
+                  disabled={isFormDisabled || !formType}
                 >
                   <SelectTrigger id="category">
                     <SelectValue placeholder="Select a category..." />
@@ -383,17 +431,59 @@ export default function TransactionsPage() {
                   placeholder="e.g., Monthly software subscription"
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  disabled={isAdding}
+                  disabled={isFormDisabled}
                 />
               </div>
+
+              {/* --- NEW: File Upload --- */}
+              <div>
+                <Label htmlFor="receipt">Receipt (Optional)</Label>
+                {formReceiptFile ? (
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-sm text-muted-foreground truncate flex-1">
+                      {formReceiptFile.name}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => {
+                        setFormReceiptFile(null)
+                        if (fileInputRef.current) fileInputRef.current.value = ""
+                      }}
+                      disabled={isFormDisabled}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Input
+                    id="receipt"
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    disabled={isFormDisabled}
+                    accept="image/*,application/pdf" // Optional: restrict file types
+                    className="mt-1"
+                  />
+                )}
+              </div>
+              {/* --- END: File Upload --- */}
+
               {/* Submit Button */}
-              <Button type="submit" className="w-full" disabled={isAdding}>
-                {isAdding ? (
+              <Button type="submit" className="w-full" disabled={isFormDisabled}>
+                {isUploading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : isAdding ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <PlusCircle className="mr-2 h-4 w-4" />
                 )}
-                {isAdding ? "Adding..." : "Add Transaction"}
+                {isUploading
+                  ? "Uploading Receipt..."
+                  : isAdding
+                  ? "Adding..."
+                  : "Add Transaction"}
               </Button>
             </form>
           </CardContent>
@@ -451,6 +541,25 @@ export default function TransactionsPage() {
                         {t.company}
                         {t.description && ` - ${t.description}`}
                       </p>
+                      {/* --- NEW: View Receipt Link --- */}
+                      {t.receiptLink && (
+                        <Button
+                          asChild
+                          variant="link"
+                          size="sm"
+                          className="p-0 h-auto text-xs text-blue-500 hover:text-blue-600"
+                        >
+                          <Link
+                            href={t.receiptLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <LinkIcon className="mr-1 h-3 w-3" />
+                            View Receipt
+                          </Link>
+                        </Button>
+                      )}
+                      {/* --- END: View Receipt Link --- */}
                     </div>
 
                     {/* Amount, Date, and Actions */}
@@ -471,7 +580,7 @@ export default function TransactionsPage() {
                         </p>
                       </div>
 
-                      {/* --- NEW: Action Dropdown Menu --- */}
+                      {/* --- Action Dropdown Menu --- */}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -484,6 +593,20 @@ export default function TransactionsPage() {
                             <Pencil className="mr-2 h-4 w-4" />
                             Edit
                           </DropdownMenuItem>
+                          {/* --- NEW: Add Receipt Link to Dropdown --- */}
+                          {t.receiptLink && (
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={t.receiptLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <LinkIcon className="mr-2 h-4 w-4" />
+                                View Receipt
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
+                          {/* --- END: Add Receipt Link --- */}
                           <DropdownMenuItem
                             onClick={() => handleDeleteClick(t)}
                             className="text-red-600 focus:text-red-600"
@@ -493,7 +616,7 @@ export default function TransactionsPage() {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      {/* --- END NEW --- */}
+                      {/* --- END --- */}
                     </div>
                   </div>
                 ))}
@@ -503,7 +626,7 @@ export default function TransactionsPage() {
         </Card>
       </div>
 
-      {/* --- NEW: Edit Sheet Portal --- */}
+      {/* --- Edit Sheet Portal --- */}
       <EditTransactionSheet
         isOpen={isEditSheetOpen}
         setIsOpen={setIsEditSheetOpen}
@@ -513,7 +636,7 @@ export default function TransactionsPage() {
         onTransactionUpdated={refreshTransactions}
       />
 
-      {/* --- NEW: Delete Alert Portal --- */}
+      {/* --- Delete Alert Portal --- */}
       <AlertDialog
         open={isDeleteAlertOpen}
         onOpenChange={setIsDeleteAlertOpen}

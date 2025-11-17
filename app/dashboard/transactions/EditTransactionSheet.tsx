@@ -1,8 +1,16 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { format, parse } from "date-fns"
-import { Calendar as CalendarIcon, Loader2, Save } from "lucide-react"
+import {
+  Calendar as CalendarIcon,
+  Loader2,
+  Save,
+  LinkIcon,
+  X,
+  Upload,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -31,6 +39,7 @@ import {
   SheetFooter,
   SheetClose,
 } from "@/components/ui/sheet"
+
 // --- ERROR FIX: Use relative paths ---
 import { useDashboard } from "../context/DashboardContext"
 import {
@@ -60,8 +69,10 @@ export function EditTransactionSheet({
   categories,
   onTransactionUpdated,
 }: EditTransactionSheetProps) {
-  const { sheetId, getGoogleAccessToken } = useDashboard()
+  const { sheetId, getGoogleAccessToken, uploadFileToDrive } = useDashboard()
   const [isUpdating, setIsUpdating] = React.useState(false)
+  const [isUploading, setIsUploading] = React.useState(false) // <-- ADD THIS
+  const fileInputRef = React.useRef<HTMLInputElement>(null) // <-- ADD THIS
 
   // State for the edit form
   const [formType, setFormType] = React.useState<"Income" | "Expense">(
@@ -72,6 +83,8 @@ export function EditTransactionSheet({
   const [formCategory, setFormCategory] = React.useState<string>("")
   const [formAmount, setFormAmount] = React.useState<string>("")
   const [formDescription, setFormDescription] = React.useState<string>("")
+  const [formReceiptLink, setFormReceiptLink] = React.useState<string>("") // <-- ADD THIS
+  const [formReceiptFile, setFormReceiptFile] = React.useState<File | null>(null) // <-- ADD THIS
 
   // When the 'transaction' prop changes, pre-fill the form state
   React.useEffect(() => {
@@ -79,7 +92,7 @@ export function EditTransactionSheet({
       const type = transaction.income > 0 ? "Income" : "Expense"
       const amount =
         type === "Income" ? transaction.income : transaction.expense
-      
+
       // Parse the date string (MM/dd/yyyy) into a Date object
       const parsedDate = parse(transaction.date, "MM/dd/yyyy", new Date())
 
@@ -89,8 +102,23 @@ export function EditTransactionSheet({
       setFormCategory(transaction.category)
       setFormAmount(String(amount))
       setFormDescription(transaction.description)
+      setFormReceiptLink(transaction.receiptLink || "") // <-- ADD THIS
+      setFormReceiptFile(null) // <-- ADD THIS (Reset file input on change)
     }
   }, [transaction])
+
+  // Handle file input change
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        toast.error("File is too large. Max 10MB.")
+        return
+      }
+      setFormReceiptFile(file)
+      setFormReceiptLink("") // Clear existing link if new file is selected
+    }
+  }
 
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
@@ -116,6 +144,24 @@ export function EditTransactionSheet({
     // --- End Validation ---
 
     setIsUpdating(true)
+    let finalReceiptLink = formReceiptLink // Start with the existing link
+
+    // --- NEW: File Upload Logic ---
+    if (formReceiptFile) {
+      setIsUploading(true)
+      const newReceiptUrl = await uploadFileToDrive(formReceiptFile)
+      setIsUploading(false)
+
+      if (!newReceiptUrl) {
+        // Upload failed, stop the submission
+        toast.error("Receipt upload failed. Transaction not updated.")
+        setIsUpdating(false)
+        return
+      }
+      finalReceiptLink = newReceiptUrl // Set the link to the newly uploaded file
+    }
+    // --- END: File Upload Logic ---
+
     const accessToken = await getGoogleAccessToken()
     if (!accessToken) {
       setIsUpdating(false)
@@ -130,9 +176,10 @@ export function EditTransactionSheet({
       description: formDescription,
       amount: amount,
       type: formType,
+      receiptLink: finalReceiptLink || undefined, // Use the final link
     }
 
-    // Call our NEW updateTransaction function
+    // Call our updateTransaction function
     const success = await updateTransaction(
       sheetId,
       accessToken,
@@ -150,6 +197,7 @@ export function EditTransactionSheet({
 
   // Filter categories based on the selected form type
   const availableCategories = categories.filter((c) => c.type === formType)
+  const isFormDisabled = isUpdating || isUploading
 
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
@@ -175,7 +223,7 @@ export function EditTransactionSheet({
                     setFormType("Income")
                     setFormCategory("") // Reset category on type change
                   }}
-                  disabled={isUpdating}
+                  disabled={isFormDisabled}
                 >
                   Income
                 </Button>
@@ -186,7 +234,7 @@ export function EditTransactionSheet({
                     setFormType("Expense")
                     setFormCategory("") // Reset category on type change
                   }}
-                  disabled={isUpdating}
+                  disabled={isFormDisabled}
                 >
                   Expense
                 </Button>
@@ -204,10 +252,14 @@ export function EditTransactionSheet({
                       "w-full justify-start text-left font-normal",
                       !formDate && "text-muted-foreground"
                     )}
-                    disabled={isUpdating}
+                    disabled={isFormDisabled}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {formDate ? format(formDate, "PPP") : <span>Pick a date</span>}
+                    {formDate ? (
+                      format(formDate, "PPP")
+                    ) : (
+                      <span>Pick a date</span>
+                    )}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
@@ -231,7 +283,7 @@ export function EditTransactionSheet({
                 step="0.01"
                 value={formAmount}
                 onChange={(e) => setFormAmount(e.target.value)}
-                disabled={isUpdating}
+                disabled={isFormDisabled}
               />
             </div>
 
@@ -241,7 +293,7 @@ export function EditTransactionSheet({
               <Select
                 value={formCompany}
                 onValueChange={setFormCompany}
-                disabled={isUpdating}
+                disabled={isFormDisabled}
               >
                 <SelectTrigger id="company">
                   <SelectValue placeholder="Select a company..." />
@@ -262,7 +314,7 @@ export function EditTransactionSheet({
               <Select
                 value={formCategory}
                 onValueChange={setFormCategory}
-                disabled={isUpdating || !formType}
+                disabled={isFormDisabled || !formType}
               >
                 <SelectTrigger id="category">
                   <SelectValue placeholder="Select a category..." />
@@ -291,9 +343,75 @@ export function EditTransactionSheet({
                 placeholder="e.g., Monthly software subscription"
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
-                disabled={isUpdating}
+                disabled={isFormDisabled}
               />
             </div>
+
+            {/* --- NEW: File Upload --- */}
+            <div>
+              <Label htmlFor="receipt">Receipt (Optional)</Label>
+              <div className="mt-1 space-y-2">
+                {formReceiptLink ? (
+                  // State 1: Show existing link
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-input p-2">
+                    <Button
+                      asChild
+                      variant="link"
+                      size="sm"
+                      className="p-0 h-auto text-xs text-blue-500 hover:text-blue-600 truncate"
+                    >
+                      <Link
+                        href={formReceiptLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <LinkIcon className="mr-1 h-3 w-3" />
+                        View Existing Receipt
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setFormReceiptLink("")} // Remove link
+                      disabled={isFormDisabled}
+                    >
+                      <X className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
+                ) : formReceiptFile ? (
+                  // State 2: Show selected file
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-input p-2">
+                    <span className="text-sm text-muted-foreground truncate flex-1">
+                      {formReceiptFile.name}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => {
+                        setFormReceiptFile(null)
+                        if (fileInputRef.current) fileInputRef.current.value = ""
+                      }}
+                      disabled={isFormDisabled}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  // State 3: Show file input
+                  <Input
+                    id="receipt-edit"
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    disabled={isFormDisabled}
+                    accept="image/*,application/pdf"
+                  />
+                )}
+              </div>
+            </div>
+            {/* --- END: File Upload --- */}
           </div>
 
           <SheetFooter>
@@ -302,13 +420,19 @@ export function EditTransactionSheet({
                 Cancel
               </Button>
             </SheetClose>
-            <Button type="submit" disabled={isUpdating}>
-              {isUpdating ? (
+            <Button type="submit" disabled={isFormDisabled}>
+              {isUploading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : isUpdating ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Save className="mr-2 h-4 w-4" />
               )}
-              {isUpdating ? "Saving..." : "Save Changes"}
+              {isUploading
+                ? "Uploading..."
+                : isUpdating
+                ? "Saving..."
+                : "Save Changes"}
             </Button>
           </SheetFooter>
         </form>

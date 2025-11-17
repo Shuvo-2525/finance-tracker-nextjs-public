@@ -26,9 +26,10 @@ export type Transaction = {
   description: string
   income: number
   expense: number
+  receiptLink?: string // <-- ADD THIS
 }
 
-// This is the data shape for *updating* a transaction
+// This is the data shape for *adding/updating* a transaction
 export type TransactionData = {
   date: Date
   company: string
@@ -36,6 +37,7 @@ export type TransactionData = {
   description: string
   amount: number
   type: "Income" | "Expense"
+  receiptLink?: string // <-- ADD THIS
 }
 
 /**
@@ -235,7 +237,7 @@ export async function getTransactions(
 ): Promise<Transaction[]> {
   try {
     // Fetches rows from the bottom up (most recent)
-    const range = "Transactions!A2:F"
+    const range = "Transactions!A2:G" // <-- MODIFIED (was A2:F)
     const url = `${SHEETS_API_URL}/${sheetId}/values/${range}?majorDimension=ROWS`
 
     const response = await fetch(url, {
@@ -264,9 +266,16 @@ export async function getTransactions(
         description: row[3] || "",
         income: parseFloat(row[4]) || 0,
         expense: parseFloat(row[5]) || 0,
+        receiptLink: row[6] || "", // <-- ADD THIS
       }))
       .filter(
-        (t: Transaction) => t.date || t.company || t.category || t.income || t.expense
+        (t: Transaction) =>
+          t.date ||
+          t.company ||
+          t.category ||
+          t.income ||
+          t.expense ||
+          t.receiptLink
       ) // Filter out empty rows
 
     return transactions.reverse().slice(0, 100) // Return 100 most recent
@@ -277,7 +286,7 @@ export async function getTransactions(
   }
 }
 
-// 4. ADDTRANSACTION FUNCTION
+// 4. ADDTRANSACTION FUNCTION (MODIFIED)
 /**
  * Adds a new transaction to the 'Transactions' tab.
  * @param sheetId The ID of the Google Sheet.
@@ -291,7 +300,7 @@ export async function addTransaction(
   transaction: TransactionData
 ): Promise<boolean> {
   try {
-    const range = "Transactions!A:F" // Append to the first empty row
+    const range = "Transactions!A:G" // <-- MODIFIED (was A:F)
     const url = `${SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=USER_ENTERED`
 
     // Format date to "MM/dd/yyyy"
@@ -305,6 +314,7 @@ export async function addTransaction(
       transaction.description,
       transaction.type === "Income" ? transaction.amount : "",
       transaction.type === "Expense" ? transaction.amount : "",
+      transaction.receiptLink || "", // <-- ADD THIS
     ]
 
     const body = {
@@ -335,7 +345,7 @@ export async function addTransaction(
   }
 }
 
-// 5. --- NEW FUNCTION: updateTransaction ---
+// 5. --- NEW FUNCTION: updateTransaction --- (MODIFIED)
 /**
  * Updates a specific transaction row in the 'Transactions' tab.
  * @param sheetId The ID of the Google Sheet.
@@ -351,8 +361,8 @@ export async function updateTransaction(
   transaction: TransactionData
 ): Promise<boolean> {
   try {
-    // Construct the specific range, e.g., "Transactions!A10:F10"
-    const range = `Transactions!A${rowIndex}:F${rowIndex}`
+    // Construct the specific range, e.g., "Transactions!A10:G10"
+    const range = `Transactions!A${rowIndex}:G${rowIndex}` // <-- MODIFIED (was A:F)
     const url = `${SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=USER_ENTERED`
 
     const formattedDate = format(transaction.date, "MM/dd/yyyy")
@@ -363,6 +373,7 @@ export async function updateTransaction(
       transaction.description,
       transaction.type === "Income" ? transaction.amount : "",
       transaction.type === "Expense" ? transaction.amount : "",
+      transaction.receiptLink || "", // <-- ADD THIS
     ]
 
     const body = {

@@ -69,7 +69,7 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
     // 3. Define the header values for each sheet
     const headerData: sheets_v4.Schema$ValueRange[] = [
       {
-        range: "Transactions!A1:F1",
+        range: "Transactions!A1:G1", // <-- MODIFIED (was A1:F1)
         values: [
           [
             "Date",
@@ -78,6 +78,7 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
             "Description",
             "Amount (Income)",
             "Amount (Expense)",
+            "Receipt Link", // <-- ADDED
           ],
         ],
       },
@@ -123,6 +124,8 @@ async function initializeSheet(sheetsApi: SheetsApi, spreadsheetId: string) {
               sheetId: 0, // Transactions
               startRowIndex: 0,
               endRowIndex: 1,
+              startColumnIndex: 0, // <-- ADDED
+              endColumnIndex: 7, // <-- ADDED (covers A to G)
             },
             description: "Protect Transactions Headers",
             warningOnly: false,

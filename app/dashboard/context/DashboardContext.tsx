@@ -21,7 +21,7 @@ type UserData = {
   googleIntegration?: {
     connected: boolean
     sheetId?: string
-    folderId?: string
+    folderId?: string // <-- We need this
   }
 }
 
@@ -29,7 +29,9 @@ type UserData = {
 type DashboardContextType = {
   userData: UserData | null
   sheetId: string | null
+  folderId: string | null // <-- ADD THIS
   getGoogleAccessToken: () => Promise<string | null>
+  uploadFileToDrive: (file: File) => Promise<string | null> // <-- ADD THIS
 }
 
 // Create the context
@@ -47,6 +49,7 @@ export function DashboardProvider({
 }) {
   const { userData } = value
   const sheetId = userData?.googleIntegration?.sheetId || null
+  const folderId = userData?.googleIntegration?.folderId || null // <-- ADD THIS
 
   // 2. Add a ref to act as a "lock"
   const isTokenRequestInProgress = useRef(false)
@@ -104,8 +107,100 @@ export function DashboardProvider({
     }
   }, [])
 
+  // --- NEW FUNCTION: uploadFileToDrive ---
+  /**
+   * Uploads a file to the user's "SaaS Finance Tracker" folder in Google Drive.
+   * @param file The file object to upload.
+   * @returns A promise that resolves to the file's webViewLink or null.
+   */
+  const uploadFileToDrive = useCallback(
+    async (file: File): Promise<string | null> => {
+      if (!folderId) {
+        toast.error("Google Drive folder ID not found.")
+        return null
+      }
+
+      const accessToken = await getGoogleAccessToken()
+      if (!accessToken) {
+        return null
+      }
+
+      try {
+        // 1. Create FormData for multipart upload
+        const formData = new FormData()
+
+        // 1a. Add file metadata
+        const metadata = {
+          name: `${new Date().toISOString()}-${file.name}`, // Unique file name
+          parents: [folderId],
+        }
+        formData.append(
+          "metadata",
+          new Blob([JSON.stringify(metadata)], { type: "application/json" })
+        )
+
+        // 1b. Add the file itself
+        formData.append("file", file)
+
+        // 2. Perform the upload
+        const uploadResponse = await fetch(
+          "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: formData,
+          }
+        )
+
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json()
+          console.error("Error uploading file:", errorData)
+          throw new Error("Failed to upload file to Google Drive.")
+        }
+
+        const uploadedFile = await uploadResponse.json()
+
+        // 3. Get the file's shareable link (webViewLink)
+        // We have to make a separate request to get this field.
+        const fileDetailsResponse = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${uploadedFile.id}?fields=webViewLink`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        )
+
+        if (!fileDetailsResponse.ok) {
+          throw new Error("Failed to get file's shareable link.")
+        }
+
+        const fileDetails = await fileDetailsResponse.json()
+
+        toast.success("Receipt uploaded successfully!")
+        return fileDetails.webViewLink || null
+      } catch (error: any) {
+        console.error("Error in uploadFileToDrive:", error)
+        toast.error(error.message || "Could not upload file.")
+        return null
+      }
+    },
+    [folderId, getGoogleAccessToken]
+  )
+  // --- END NEW FUNCTION ---
+
   return (
-    <DashboardContext.Provider value={{ userData, sheetId, getGoogleAccessToken }}>
+    <DashboardContext.Provider
+      value={{
+        userData,
+        sheetId,
+        folderId, // <-- PASS IT
+        getGoogleAccessToken,
+        uploadFileToDrive, // <-- PASS IT
+      }}
+    >
       {children}
     </DashboardContext.Provider>
   )
