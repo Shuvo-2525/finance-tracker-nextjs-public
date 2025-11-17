@@ -80,9 +80,19 @@ export async function getCompanies(
     })
 
     if (!response.ok) {
-      const errorData = await response.json()
+      let errorData = { message: "Failed to fetch companies from Google Sheet." }
+      try {
+        errorData = await response.json()
+      } catch (e) {
+        const errorText = await response.text()
+        console.error(
+          "Non-JSON error response from Google Sheets API (getCompanies):",
+          errorText
+        )
+        errorData = { message: errorText.slice(0, 200) }
+      }
       console.error("Error fetching companies:", errorData)
-      throw new Error("Failed to fetch companies from Google Sheet.")
+      throw new Error(errorData.message)
     }
 
     const data = await response.json()
@@ -94,9 +104,9 @@ export async function getCompanies(
       id: row[0],
       name: row[1],
     }))
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in getCompanies:", error)
-    toast.error("Could not load your companies.")
+    toast.error(error.message || "Could not load your companies.")
     return [] // Return an empty array on failure
   }
 }
@@ -171,9 +181,19 @@ export async function getCategories(
     })
 
     if (!response.ok) {
-      const errorData = await response.json()
+      let errorData = { message: "Failed to fetch categories from Google Sheet." }
+      try {
+        errorData = await response.json()
+      } catch (e) {
+        const errorText = await response.text()
+        console.error(
+          "Non-JSON error response from Google Sheets API (getCategories):",
+          errorText
+        )
+        errorData = { message: errorText.slice(0, 200) }
+      }
       console.error("Error fetching categories:", errorData)
-      throw new Error("Failed to fetch categories from Google Sheet.")
+      throw new Error(errorData.message)
     }
 
     const data = await response.json()
@@ -186,9 +206,9 @@ export async function getCategories(
       name: row[1],
       type: row[2] === "Income" ? "Income" : "Expense", // Ensure type is valid
     }))
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in getCategories:", error)
-    toast.error("Could not load your categories.")
+    toast.error(error.message || "Could not load your categories.")
     return [] // Return an empty array on failure
   }
 }
@@ -266,9 +286,21 @@ export async function getTransactions(
     })
 
     if (!response.ok) {
-      const errorData = await response.json()
+      let errorData = {
+        message: "Failed to fetch transactions from Google Sheet.",
+      }
+      try {
+        errorData = await response.json()
+      } catch (e) {
+        const errorText = await response.text()
+        console.error(
+          "Non-JSON error response from Google Sheets API (getTransactions):",
+          errorText
+        )
+        errorData = { message: errorText.slice(0, 200) }
+      }
       console.error("Error fetching transactions:", errorData)
-      throw new Error("Failed to fetch transactions from Google Sheet.")
+      throw new Error(errorData.message)
     }
 
     const data = await response.json()
@@ -298,9 +330,9 @@ export async function getTransactions(
       ) // Filter out empty rows
 
     return transactions.reverse().slice(0, 100) // Return 100 most recent
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in getTransactions:", error)
-    toast.error("Could not load your transactions.")
+    toast.error(error.message || "Could not load your transactions.")
     return []
   }
 }
@@ -506,9 +538,19 @@ export async function getBills(
     })
 
     if (!response.ok) {
-      const errorData = await response.json()
+      let errorData = { message: "Failed to fetch bills from Google Sheet." }
+      try {
+        errorData = await response.json()
+      } catch (e) {
+        const errorText = await response.text()
+        console.error(
+          "Non-JSON error response from Google Sheets API (getBills):",
+          errorText
+        )
+        errorData = { message: errorText.slice(0, 200) }
+      }
       console.error("Error fetching bills:", errorData)
-      throw new Error("Failed to fetch bills from Google Sheet.")
+      throw new Error(errorData.message)
     }
 
     const data = await response.json()
@@ -528,9 +570,9 @@ export async function getBills(
     return bills.sort(
       (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
     )
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in getBills:", error)
-    toast.error("Could not load your bills.")
+    toast.error(error.message || "Could not load your bills.")
     return []
   }
 }
@@ -711,7 +753,7 @@ export async function deleteBill(
 
     toast.success(`Bill deleted successfully!`)
     return true
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error in deleteBill:", error)
     const message = error instanceof Error ? error.message : String(error)
     toast.error(message || "Could not delete your bill.")
