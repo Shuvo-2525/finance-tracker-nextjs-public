@@ -1,274 +1,238 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/app/context/AuthContext"
-import { auth, db } from "@/lib/firebase"
-import {
-  signOut,
-  GoogleAuthProvider,
-  signInWithPopup,
-  getAuth,
-} from "firebase/auth"
-import { doc, onSnapshot, setDoc } from "firebase/firestore"
+import { Loader2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
-import { Loader2, Files, LogOut } from "lucide-react"
-import { IconGoogle } from "@/app/components/icons" // Corrected import path
 
-// Define a type for our user's Firestore data
-type UserData = {
-  displayName: string
-  email: string
-  subscriptionStatus: string
-  googleIntegration?: {
-    connected: boolean
-    sheetId?: string
-    folderId?: string
-  }
-}
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { useDashboard } from "@/app/dashboard/context/DashboardContext"
+import {
+  getCompanies,
+  getCategories,
+  getTransactions,
+  type Company,
+  type Category,
+  type Transaction,
+} from "@/lib/sheets"
+
+// Helper to format currency
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+})
 
 export default function DashboardPage() {
-  const { user, loading: authLoading } = useAuth()
-  const router = useRouter()
+  const { sheetId, getGoogleAccessToken, userData } = useDashboard()
 
-  // We need new state to hold our user's data from Firestore
-  const [userData, setUserData] = React.useState<UserData | null>(null)
-  const [isDataLoading, setIsDataLoading] = React.useState(true)
-  const [isConnecting, setIsConnecting] = React.useState(false)
+  // State for data
+  const [companies, setCompanies] = React.useState<Company[]>([])
+  const [categories, setCategories] = React.useState<Category[]>([])
+  const [transactions, setTransactions] = React.useState<Transaction[]>([])
 
-  // This effect handles protecting the route
-  React.useEffect(() => {
-    // If auth is not loading and there is no user, redirect to login
-    if (!authLoading && !user) {
-      router.push("/login")
-    }
-  }, [user, authLoading, router])
+  // State for loading
+  const [isLoadingData, setIsLoadingData] = React.useState(false)
 
-  // This effect fetches the user's data from Firestore in real-time
-  React.useEffect(() => {
-    if (user) {
-      const userDocRef = doc(db, "users", user.uid)
+  // Fetch all data (companies, categories, transactions)
+  const fetchAllData = React.useCallback(async () => {
+    if (!sheetId) return
 
-      // onSnapshot listens for real-time updates
-      const unsubscribe = onSnapshot(
-        userDocRef,
-        (docSnap) => {
-          if (docSnap.exists()) {
-            setUserData(docSnap.data() as UserData)
-          } else {
-            // This case should ideally not happen if signup is working
-            toast.error("Could not find user data. Contacting support.")
-            console.error("No user document found for UID:", user.uid)
-          }
-          setIsDataLoading(false)
-        },
-        (error) => {
-          console.error("Error fetching user data:", error)
-          toast.error("Failed to load user data.")
-          setIsDataLoading(false)
-        }
-      )
-
-      // Clean up the listener when the component unmounts
-      return () => unsubscribe()
-    }
-  }, [user]) // Re-run this effect when the user object changes
-
-  // Handle user sign-out
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth)
-      toast.success("Signed out successfully.")
-      router.push("/login") // Redirect to login page after sign out
-    } catch (error) {
-      console.error("Error signing out:", error)
-      toast.error("Failed to sign out. Please try again.")
-    }
-  }
-
-  // This is the updated function to connect to Google Drive & Sheets
-  const handleGoogleConnect = async () => {
-    if (!user) {
-      toast.error("You must be logged in to connect.")
+    setIsLoadingData(true)
+    const accessToken = await getGoogleAccessToken()
+    if (!accessToken) {
+      setIsLoadingData(false)
       return
     }
 
-    setIsConnecting(true)
-    const provider = new GoogleAuthProvider()
-    provider.addScope("https://www.googleapis.com/auth/drive.file")
-    provider.addScope("https://www.googleapis.com/auth/spreadsheets")
+    // Fetch all three in parallel
+    const [fetchedCompanies, fetchedCategories, fetchedTransactions] =
+      await Promise.all([
+        getCompanies(sheetId, accessToken),
+        getCategories(sheetId, accessToken),
+        getTransactions(sheetId, accessToken),
+      ])
 
-    const authInstance = getAuth()
+    setCompanies(fetchedCompanies)
+    setCategories(fetchedCategories)
+    setTransactions(fetchedTransactions)
+    setIsLoadingData(false)
+    toast.success("Dashboard data loaded!")
+  }, [sheetId, getGoogleAccessToken])
 
-    try {
-      const result = await signInWithPopup(authInstance, provider)
-      const credential = GoogleAuthProvider.credentialFromResult(result)
-      const accessToken = credential?.accessToken
+  // Calculate financial totals
+  const { totalIncome, totalExpense, netIncome } = React.useMemo(() => {
+    let totalIncome = 0
+    let totalExpense = 0
 
-      if (!accessToken) {
-        toast.error("Could not get access token from Google.")
-        setIsConnecting(false)
-        return
-      }
-
-      toast.success("Permissions granted! Setting up your files...")
-
-      // *** THIS IS THE NEW PART ***
-      // Send the token to our server-side API route
-      const response = await fetch("/api/setup-google", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ accessToken }),
-      })
-
-      if (!response.ok) {
-        const { error } = await response.json()
-        throw new Error(error || "Failed to set up Google files.")
-      }
-
-      // Get back the new folder and sheet IDs
-      const { folderId, sheetId } = await response.json()
-
-      if (!folderId || !sheetId) {
-        throw new Error("Invalid response from setup API.")
-      }
-
-      // Now, save this information to Firestore
-      const userRef = doc(db, "users", user.uid)
-      await setDoc(
-        userRef,
-        {
-          googleIntegration: {
-            connected: true,
-            folderId: folderId,
-            sheetId: sheetId,
-          },
-        },
-        { merge: true }
-      )
-
-      toast.success("Successfully created your Google Sheet and Folder!")
-      // The onSnapshot listener will automatically update the UI!
-    } catch (error: any) {
-      console.error("Error connecting Google account:", error)
-      if (error.code === "auth/popup-closed-by-user") {
-        toast.info("Connection process cancelled.")
-      } else {
-        toast.error(error.message || "Failed to connect to Google.")
-      }
-    } finally {
-      setIsConnecting(false)
+    for (const t of transactions) {
+      totalIncome += t.income
+      totalExpense += t.expense
     }
-  }
 
-  // ... (rest of the component is the same as before) ...
-  // Show a loading state while auth or data is being checked
-  if (authLoading || isDataLoading) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-lg text-muted-foreground">Loading your data...</p>
-      </div>
-    )
-  }
+    const netIncome = totalIncome - totalExpense
+    return { totalIncome, totalExpense, netIncome }
+  }, [transactions])
 
-  // This should not be visible, as the effect above will redirect
-  if (!user) {
-    return null
-  }
+  const recentTransactions = transactions.slice(0, 5)
 
-  // This is the main render logic
   return (
-    <div className="flex min-h-screen flex-col">
-      {/* Dashboard Header */}
-      <header className="border-b">
-        <div className="container flex h-14 items-center justify-between">
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2 font-bold"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-6 w-6"
-            >
-              <path d="M3 3v18h18" />
-              <path d="m19 9-5 5-4-4-3 3" />
-            </svg>
-            <span>Finance Tracker</span>
-          </Link>
-          <Button variant="ghost" size="icon" onClick={handleSignOut}>
-            <LogOut className="h-5 w-5" />
-            <span className="sr-only">Sign Out</span>
-          </Button>
-        </div>
-      </header>
+    <div className="flex flex-1 flex-col gap-4">
+      {/* --- Header --- */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold md:text-3xl">
+          Welcome, {userData?.displayName || "User"}!
+        </h1>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={fetchAllData}
+          disabled={isLoadingData}
+        >
+          <RefreshCw
+            className={cn("mr-2 h-4 w-4", isLoadingData && "animate-spin")}
+          />
+          Load Data
+        </Button>
+      </div>
 
-      {/* Main Content Area */}
-      <main className="container flex-1 py-8">
-        {userData && userData.googleIntegration?.connected ? (
-          // 1. User IS connected. Show the main app (for now, a welcome).
-          <div>
-            <h1 className="text-3xl font-bold">
-              Welcome, {userData.displayName || "User"}!
-            </h1>
-            <p className="mt-2 text-muted-foreground">
-              This is your protected dashboard.
-            </p>
-            <p className="mt-4">Your email: {userData.email}</p>
-            <p className="mt-4 text-green-600">
-              You are connected to Google Drive & Sheets!
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Sheet ID: {userData.googleIntegration?.sheetId}
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Folder ID: {userData.googleIntegration?.folderId}
+      {/* --- Loading State --- */}
+      {isLoadingData && (
+        <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <Loader2 className="h-12 w-12 animate-spin text-muted-foreground" />
+            <h3 className="text-xl font-bold tracking-tight">
+              Loading your financial data...
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Please wait while we connect to your Google Sheet.
             </p>
           </div>
-        ) : (
-          // 2. User IS NOT connected. Show the "Connect" prompt.
-          <div className="mx-auto max-w-lg rounded-xl border bg-card p-8 text-center shadow-lg">
-            <Files className="mx-auto h-16 w-16 text-primary" />
-            <h1 className="mt-6 text-2xl font-bold">
-              Connect to Google Drive
-            </h1>
-            <p className="mt-4 text-base text-muted-foreground">
-              To use your finance tracker, you must grant permission to access
-              Google Drive and Google Sheets.
+        </div>
+      )}
+
+      {/* --- Empty State --- */}
+      {!isLoadingData && transactions.length === 0 && (
+        <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <h3 className="text-2xl font-bold tracking-tight">
+              No data loaded
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Click the "Load Data" button to fetch your financial summary.
             </p>
-            <p className="mt-4 text-sm text-muted-foreground">
-              We will create a single new folder (
-              <b>&quot;SaaS Finance Tracker&quot;</b>) and one Google Sheet in your
-              personal drive. <b>You retain 100% ownership of your data.</b>
-            </p>
-            <Button
-              size="lg"
-              className="mt-8 w-full"
-              onClick={handleGoogleConnect}
-              disabled={isConnecting}
-            >
-              {isConnecting ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : (
-                <IconGoogle className="mr-2 h-5 w-5" />
-              )}
-              {isConnecting
-                ? "Connecting..."
-                : "Connect to Google Drive & Sheets"}
-            </Button>
           </div>
-        )}
-      </main>
+        </div>
+      )}
+
+      {/* --- Data Display State --- */}
+      {!isLoadingData && transactions.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {/* Total Income */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Total Income
+              </CardTitle>
+              <span className="text-2xl text-green-600">↑</span>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-green-600">
+                {currencyFormatter.format(totalIncome)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Across all {companies.length} companies
+              </p>
+            </CardContent>
+          </Card>
+          {/* Total Expense */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Total Expense
+              </CardTitle>
+              <span className="text-2xl text-red-600">↓</span>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-red-600">
+                {currencyFormatter.format(totalExpense)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Across all {categories.length} categories
+              </p>
+            </CardContent>
+          </Card>
+          {/* Net Income */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Net Income</CardTitle>
+              <span className="text-2xl">💰</span>
+            </CardHeader>
+            <CardContent>
+              <div
+                className={cn(
+                  "text-3xl font-bold",
+                  netIncome >= 0 ? "text-green-600" : "text-red-600"
+                )}
+              >
+                {currencyFormatter.format(netIncome)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total income minus total expenses
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* --- Recent Transactions List --- */}
+      {!isLoadingData && transactions.length > 0 && (
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Recent Transactions</CardTitle>
+            <CardDescription>
+              Your 5 most recent transactions.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {recentTransactions.map((t, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between"
+                >
+                  <div>
+                    <p className="font-medium">{t.category}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t.company}
+                      {t.description && ` - ${t.description}`}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p
+                      className={cn(
+                        "font-semibold",
+                        t.income > 0 ? "text-green-600" : "text-red-600"
+                      )}
+                    >
+                      {t.income > 0
+                        ? currencyFormatter.format(t.income)
+                        : currencyFormatter.format(t.expense * -1)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{t.date}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
