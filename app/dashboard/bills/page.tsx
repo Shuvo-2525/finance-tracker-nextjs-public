@@ -501,7 +501,7 @@ export default function BillsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {companies.map((company) => (
-                      <SelectItem key={company.id} value={company.name}>
+                      <SelectItem key={company.rowIndex} value={company.name}> {/* <-- FIX: Use rowIndex */}
                         {company.name}
                       </SelectItem>
                     ))}

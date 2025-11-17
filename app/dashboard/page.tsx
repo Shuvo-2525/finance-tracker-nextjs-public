@@ -192,7 +192,7 @@ export default function DashboardPage() {
             <SelectContent>
               <SelectItem value="all">All Companies</SelectItem>
               {companies.map((company) => (
-                <SelectItem key={company.id} value={company.name}>
+                <SelectItem key={company.rowIndex} value={company.name}> {/* <-- FIX: Use rowIndex */}
                   {company.name}
                 </SelectItem>
               ))}
